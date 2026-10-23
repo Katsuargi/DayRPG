@@ -1,11 +1,11 @@
 # EDITOR BRIEF — Phase 2 planning (draft for multi-model review)
 
-Status: draft v2 — v1 plus the "Round-1 checklist" and D7–D8 appended
-after an external first pass. Its provisional takes on D1–D6 were
-deliberately NOT included, to keep your plan independent. Purpose:
-paste this whole file into 1–2 other models and ask for *their own*
-plan and D-decision list — not a review of this draft. Bring the
-outputs back;
+Status: draft v3 — adds round-2 inputs (D9–D13 definitions and a
+required-coverage list) after a second external pass. Answers and
+takes from either round are deliberately NOT included, to keep your
+plan independent. Purpose: paste this whole file into 1–2 other
+models and ask for *their own* plan and D-decision list — not a
+review of this draft. Bring the outputs back;
 disagreements get reconciled with stated reasons before implementation
 (same method that worked for the content-design rounds).
 
@@ -17,16 +17,22 @@ refuses to load (repair mode).
 
 ## Settled constraints (do not relitigate — four review rounds decided these)
 
-1. Editor imports `content.py` ONLY — never `game_core.py`. It must be
-   able to open and repair files the game refuses to load.
+Round-2 uncontested amendments, adopted: constraint 1's last sentence
+is now "open and diagnose any file, and repair whatever parses" (raw
+repair deferred); constraint 4 additionally covers key order *within*
+records. One challenge remains open — see D13.
+
+1. Editor imports `content.py` ONLY — never `game_core.py`. It must
+   open and diagnose any file, and repair whatever parses.
 2. Schema-driven forms — field lists drive widgets, not per-file hand
    layout.
 3. Validation blocks save — reuse `content.validate_bundle()` /
    `try_load_content()` messages verbatim; never write a file that
    fails validation.
-4. JSON writes never sort keys, never reorder arrays — planner order,
-   event draw order, and the seeded RNG read file order (fixture
-   goldens are the tripwire).
+4. JSON writes never sort keys, never reorder arrays, and never
+   reorder keys within a record — planner order, event draw order,
+   and the seeded RNG read file order (fixture goldens are the
+   tripwire), and record key order keeps git diffs to one line.
 5. Engine stays headless; editor is display + "ask the user" only.
 6. Every slice keeps `python test_smoke.py` and `python check_live.py`
    green.
@@ -156,3 +162,45 @@ Address each; use D-numbered answers where they open forks:
   a separate pre-2a loader fix (it is a live gap in the game loader,
   in the spirit of hard rule 2), inside 2a's viewer, or in the 2b
   write layer — not *whether*.
+
+## Round-2 additions — definitions only (answer them in your plan)
+
+- **D9 — Save granularity.** What is the unit of save and of
+  atomicity: per-file, or Save-All (stage dirty files, validation,
+  temp-then-replace, compensation on partial failure)? State exactly
+  what is atomic, what is not, and what the safety net is.
+- **D10 — Canonical form on save.** Serialization pins (ensure_ascii,
+  UTF-8, no NaN/Infinity) and what happens when canonical bytes would
+  differ from disk (CRLF, `0.10`, odd indentation): reformat, warn,
+  or leave untouched files alone? BOM policy?
+- **D11 — Stale-write guard.** The repo may be edited (hand, agent)
+  while the editor is open. Detect disk changes since load; define
+  save behavior when the buffer and disk have both moved.
+- **D12 — Reference sources.** Dropdowns and used-by lists resolve
+  from the in-memory bundle or from disk? Is a record added this
+  session selectable immediately?
+- **D13 — Save-gate granularity (round-2 challenges settled
+  constraint 3; still open).** Original rule: bundle-wide
+  all-or-nothing gate. Challenge: with problems across several files,
+  one-at-a-time repair can never persist progress. Proposed rule: a
+  file may be written only when it has no problems of its own; a save
+  must never increase the bundle's total problem count; other files'
+  problems are listed but do not block; the editor must say plainly
+  that the game will not launch until all problems are fixed. Choose,
+  reason, and reconcile your choice with your D9 answer.
+
+## Round-2 required coverage (risks)
+
+- Structured problems: file/record/field metadata alongside each
+  message, **str-compatible with today's exact message format** (the
+  existing suite asserts on substrings of raw problem entries).
+- Record key order preserved: edit fields in place, append new keys
+  in schema order; acceptance = change one field, save, git diff is
+  one line.
+- `type(x) is int` discipline (bool is an int) in schema and form
+  coercion; empty string vs null vs missing distinguished in forms.
+- Viewer and forms render invalid data without crashing (per
+  failure-type fixtures in 2a's acceptance).
+- Stale temp files: cleaned on start, pattern gitignored.
+- Show the target directory in the title bar; make the fixtures
+  directory visually distinct.

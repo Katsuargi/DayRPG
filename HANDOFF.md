@@ -77,11 +77,10 @@ Ordered; phases have one concern each (a failure has one suspect).
 
 - **Phase 2 planning lives in `EDITOR_BRIEF.md`** — sliced 2a–2e
   (viewer → write layer → items forms → remaining files →
-  repair/lifecycle) with D1–D8 open decisions, measured facts
-  (byte-identical round-trip), and a round-1 external checklist. It is
-  a draft awaiting independent multi-model plans: each model produces
-  *its own* plan for the same brief; reconcile with stated reasons
-  before implementing.
+  repair/lifecycle) with D1–D13 open decisions, measured facts
+  (byte-identical round-trip), and round-1/round-2 external inputs.
+  Round 2 delivered a full independent plan; reconciliation is in
+  progress — implement only after the D13 save-gate fork is settled.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
