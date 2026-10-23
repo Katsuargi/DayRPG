@@ -475,6 +475,9 @@ then assert both engines roll identical results.
   engine UI-free.
 - **`STAT_LABELS` is for vitals only** (see the stat recipe's warning).
 - **Pattern ids are save data** — renaming one orphans old saves.
+- **Ids must be lowercase slugs** (`[a-z][a-z0-9_]*`, all six id
+  families) — validation rejects anything else loudly, naming file,
+  id, and rule.
 - **New state ⇒ `to_dict` + `from_dict`**, with defaults for old saves.
 - **Clamp everything** (`clamp(self.health + 20)`), or vitals run away.
 - **Route healing through `_recovery()`** so building bonuses keep working.

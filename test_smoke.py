@@ -140,6 +140,24 @@ try:
     )
     bundle, probs = content.try_load_content(_tmp)
     assert any("EVENT_CHANE" in p for p in probs), probs
+
+    # (f) non-slug item id: named file + exact id + the rule, both loaders
+    shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
+    items = json.loads((_tmp / "items.json").read_text(encoding="utf-8"))
+    items[0]["id"] = "Berries"  # display text crept back into the id
+    (_tmp / "items.json").write_text(
+        json.dumps(items, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None, "parseable content must stay loadable"
+    assert any(
+        p.startswith("items.json: 'Berries'") and "slug" in p for p in probs
+    ), probs
+    try:
+        content.load_content(_tmp)
+        raise AssertionError("strict load must reject the non-slug id")
+    except content.ContentError as exc:
+        assert "'Berries'" in str(exc) and "slug" in str(exc), str(exc)
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")

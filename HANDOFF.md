@@ -25,7 +25,8 @@ picker all map through it, so no display string changed. No save
 migration, per decision: `from_dict` merges defaults, so a stale save
 loads but keeps old-named stray keys. Fixture re-pinned in the same
 change; the item-order golden is now
-`("berries", "wood", "herbs", "stone")`.
+`("berries", "wood", "herbs", "stone")`. A follow-up check enforces the
+slug shape on all six id families — messages name file, id, and rule.
 
 **Git is set up** (the point of the folder move): `origin` =
 https://github.com/Katsuargi/DayRPG on branch `main`; commit small and
@@ -111,6 +112,8 @@ checkpoint as optional and the editor phases as on the roadmap.
 4. **Ids are save data** — pattern/item/event/action ids never get
    renamed casually (the 0b item rename was the one deliberate
    exception; display names were held constant via `ITEM_NAMES`).
+   Ids are lowercase slugs (`[a-z][a-z0-9_]*`) — `content.py`
+   validation rejects anything else, naming file, id, and rule.
 5. **New engine state ⇒ `to_dict` + `from_dict` with defaults.**
 6. Every content change: `python test_smoke.py` (includes the live
    gate); re-pin the fixture deliberately when engine tests should

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -106,10 +107,25 @@ def content_dir() -> Path:
     return Path(override) if override else project_content_dir()
 
 
-# --- Validation (engine-free: schema, cross-references, ranges) -----------
+# --- Validation (engine-free: schema, cross-references, id slugs, ranges) ---
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+#: Slug shape every record id must match (items, skills, stats, actions,
+#: patterns, events). Ids are save data and code references; display text
+#: lives in each record's name/label fields. fullmatch, not match: a bare
+#: `$` would let trailing newlines through.
+_ID_SLUG = re.compile(r"[a-z][a-z0-9_]*")
+
+
+def _check_slug(where: str, rec_id: str, problems: List[str]) -> None:
+    """Append a problem when a record id is not a lowercase slug."""
+    if not _ID_SLUG.fullmatch(rec_id):
+        problems.append(
+            f"{where}: id must be a lowercase slug (a-z, then a-z/0-9/_)"
+        )
 
 
 def _check_items(items: Any, problems: List[str]) -> Set[str]:
@@ -130,6 +146,7 @@ def _check_items(items: Any, problems: List[str]) -> Set[str]:
         if item_id in ids:
             problems.append(f"{where}: duplicate id")
         ids.add(item_id)
+        _check_slug(where, item_id, problems)
         if not isinstance(rec.get("name"), str) or not rec["name"]:
             problems.append(f"{where}: 'name' must be a non-empty string")
         start = rec.get("start")
@@ -153,6 +170,7 @@ def _check_level_table(
         if not isinstance(rec_id, str) or not rec_id:
             problems.append(f"{filename}.json: ids must be non-empty strings")
             continue
+        _check_slug(where, rec_id, problems)
         if not isinstance(rec, dict):
             problems.append(f"{where}: expected an object")
             continue
@@ -187,6 +205,7 @@ def _check_actions(
         if action_id in ids:
             problems.append(f"{where}: duplicate id")
         ids.add(action_id)
+        _check_slug(where, action_id, problems)
         if not isinstance(rec.get("label"), str) or not rec["label"]:
             problems.append(f"{where}: 'label' must be a non-empty string")
         skill = rec.get("skill")
@@ -248,6 +267,7 @@ def _check_patterns(
         if not isinstance(pattern_id, str) or not pattern_id:
             problems.append("patterns.json: ids must be non-empty strings")
             continue
+        _check_slug(where, pattern_id, problems)
         if not isinstance(rec, dict):
             problems.append(f"{where}: expected an object")
             continue
@@ -294,6 +314,7 @@ def _check_events(
         if not isinstance(event_id, str) or not event_id:
             problems.append("events.json: ids must be non-empty strings")
             continue
+        _check_slug(where, event_id, problems)
         if not isinstance(rec, dict):
             problems.append(f"{where}: expected an object")
             continue
