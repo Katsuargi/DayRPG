@@ -1,0 +1,26 @@
+[
+  {
+    "id": "Berries",
+    "name": "Berries",
+    "start": 2,
+    "tooltip": "Food. Resting and sleeping eat one to restore health and energy."
+  },
+  {
+    "id": "Wood",
+    "name": "Wood",
+    "start": 0,
+    "tooltip": "Building material — spent by Build and Craft attempts."
+  },
+  {
+    "id": "Herbs",
+    "name": "Herbs",
+    "start": 0,
+    "tooltip": "Not used yet."
+  },
+  {
+    "id": "Stone",
+    "name": "Stone",
+    "start": 0,
+    "tooltip": "Not used yet."
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "lean_to": {
+    "name": "Lean to",
+    "kind": "build",
+    "skill": "carpentry",
+    "skill_req": 1,
+    "materials": {
+      "Wood": 5
+    },
+    "work": 1,
+    "description": "A large piece of wood leaning against a tree. Keeps the weather out, at least.",
+    "effect": "Resting and sleeping restore +10% health and energy (rounded down)."
+  },
+  "wood_axe": {
+    "name": "Wood Axe",
+    "kind": "craft",
+    "skill": "carving",
+    "skill_req": 1,
+    "materials": {
+      "Wood": 3
+    },
+    "work": 1,
+    "description": "A wooden axe. Technically better than nothing.",
+    "effect": "+1 wood per wood gathering attempt. Extra copies give no further bonus (kept for selling later)."
+  }
+}

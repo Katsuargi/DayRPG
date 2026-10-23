@@ -1,0 +1,73 @@
+[
+  {
+    "id": "gather_food",
+    "label": "Gather Food",
+    "skill": "foraging",
+    "checks": [
+      [
+        "skills",
+        "foraging"
+      ],
+      [
+        "stats",
+        "strength"
+      ]
+    ],
+    "stat_xp": null
+  },
+  {
+    "id": "gather_wood",
+    "label": "Gather Wood",
+    "skill": "woodcutting",
+    "checks": [
+      [
+        "skills",
+        "woodcutting"
+      ],
+      [
+        "stats",
+        "strength"
+      ]
+    ],
+    "stat_xp": null
+  },
+  {
+    "id": "rest",
+    "label": "Rest",
+    "skill": null,
+    "checks": [],
+    "stat_xp": null
+  },
+  {
+    "id": "build",
+    "label": "Build",
+    "skill": "carpentry",
+    "checks": [
+      [
+        "skills",
+        "carpentry"
+      ],
+      [
+        "stats",
+        "strength"
+      ]
+    ],
+    "stat_xp": null
+  },
+  {
+    "id": "craft",
+    "label": "Craft",
+    "skill": "carving",
+    "checks": [
+      [
+        "skills",
+        "carving"
+      ],
+      [
+        "stats",
+        "strength"
+      ]
+    ],
+    "stat_xp": null
+  }
+]

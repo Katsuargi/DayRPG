@@ -1,5 +1,3 @@
-   __pycache__/
-   *.pyc
-   saves/
-   screenshot*.png
-   _scratch_backup
+__pycache__/
+*.pyc
+screenshot.png

@@ -1,0 +1,30 @@
+{
+  "wandering_thoughts": {
+    "text": "Your mind drifts to the world you left behind.",
+    "actions": [],
+    "check": true
+  },
+  "stray_berry_bush": {
+    "text": "A stray berry bush practically begs to be picked.",
+    "actions": [
+      "gather_food"
+    ],
+    "check": true
+  },
+  "howling_wind": {
+    "text": "A hard gust nearly tears the work from your hands.",
+    "actions": [
+      "gather_wood",
+      "build",
+      "craft"
+    ],
+    "check": true
+  },
+  "quiet_moment": {
+    "text": "For a breath everything is still. No check, no consequences.",
+    "actions": [
+      "rest"
+    ],
+    "check": false
+  }
+}

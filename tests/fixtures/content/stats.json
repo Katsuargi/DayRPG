@@ -1,0 +1,12 @@
+{
+  "strength": {
+    "name": "Strength",
+    "start_level": 5,
+    "tooltip": "Placeholder stat — feeds event checks for gather, build and craft actions."
+  },
+  "defense": {
+    "name": "Defense",
+    "start_level": 3,
+    "tooltip": "Placeholder stat — reserved for future events and combat."
+  }
+}

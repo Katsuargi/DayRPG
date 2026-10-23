@@ -1,0 +1,22 @@
+{
+  "foraging": {
+    "name": "Foraging",
+    "start_level": 1,
+    "tooltip": "Governs Gather Food attempts and foraging event checks."
+  },
+  "woodcutting": {
+    "name": "Woodcutting",
+    "start_level": 1,
+    "tooltip": "Governs Gather Wood attempts and its event checks."
+  },
+  "carpentry": {
+    "name": "Carpentry",
+    "start_level": 1,
+    "tooltip": "Governs Build attempts (like the Lean to)."
+  },
+  "carving": {
+    "name": "Carving",
+    "start_level": 1,
+    "tooltip": "Governs Craft attempts (like the Wood Axe)."
+  }
+}
