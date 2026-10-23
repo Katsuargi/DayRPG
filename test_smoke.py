@@ -158,6 +158,20 @@ try:
         raise AssertionError("strict load must reject the non-slug id")
     except content.ContentError as exc:
         assert "'Berries'" in str(exc) and "slug" in str(exc), str(exc)
+
+    # (g) unknown action behavior: named file + id + the vocabulary
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    actions = json.loads((_tmp / "actions.json").read_text(encoding="utf-8"))
+    actions[0]["behavior"] = "gather"  # not in BEHAVIOR_HANDLERS
+    (_tmp / "actions.json").write_text(
+        json.dumps(actions, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None, "parseable content must stay loadable"
+    assert any(
+        p.startswith("actions.json: 'gather_food'") and "behavior" in p
+        for p in probs
+    ), probs
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")

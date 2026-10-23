@@ -208,6 +208,11 @@ def _check_actions(
         _check_slug(where, action_id, problems)
         if not isinstance(rec.get("label"), str) or not rec["label"]:
             problems.append(f"{where}: 'label' must be a non-empty string")
+        if rec.get("behavior") not in BEHAVIOR_HANDLERS:
+            problems.append(
+                f"{where}: 'behavior' must be one of "
+                f"{tuple(BEHAVIOR_HANDLERS)}"
+            )
         skill = rec.get("skill")
         if skill is not None and skill not in skill_ids:
             problems.append(f"{where}: unknown skill {skill!r}")

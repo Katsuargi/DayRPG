@@ -87,7 +87,7 @@ just aren't hand-written anymore.
 | Action stat XP | `actions.json` → `stat_xp` field | `ACTION_STAT_XP` → XP block in `run_slot` |
 | Stat/skill names, start levels, tooltips | `content/stats.json`, `content/skills.json` | `STAT_NAMES`, `SKILL_NAMES`, `GameEngine.__init__` |
 | Vitals shown in change lists | (code — vitals are engine attributes) | `STAT_LABELS` → `_snapshot` / `_diff` |
-| Action ids the engine can execute | (code — needs a Python handler) | `HANDLED_ACTIONS` + dispatch in `_apply_action` / `run_slot` |
+| Action dispatch | `content/actions.json` (`behavior` field) | `ACTION_BEHAVIOR` → `_apply_<behavior>` in `_apply_action` / `run_slot` |
 | Action behavior + yields | (code — the Python handler) | `_apply_gather_food`, `_apply_rest`, `_apply_sleep` |
 | Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check` |
 | Build/craft blueprints | `content/patterns.json` | `PATTERNS` (`Pattern` dataclass) → `_apply_build_craft`, `patterns_for` |
@@ -192,13 +192,15 @@ array (array order is the planner order, so new actions appear last in
 every dropdown):
 
 ```json
-{ "id": "fish", "label": "Fish", "skill": "fishing",
+{ "id": "fish", "label": "Fish", "behavior": "fish",
+  "skill": "fishing",
   "checks": [["skills", "fishing"], ["stats", "strength"]],
   "stat_xp": null }
 ```
 
-`"skill": null` makes an action unskilled (like Rest); `"stat_xp"` may
-be `null` or `["strength", 4]` to train a stat per attempt. The `id` is
+`"behavior"` picks the handler (step 3); `"skill": null` makes an
+action unskilled (like Rest); `"stat_xp"` may be `null` or
+`["strength", 4]` to train a stat per attempt. The `id` is
 save data — pick it once and never rename it.
 
 **2. Give it a skill** — add to `content/skills.json`:
@@ -212,16 +214,19 @@ The SKILLS panel row appears on its own; `start_level` feeds
 `GameEngine.__init__` automatically and the tooltip comes from the same
 record — there is nothing to touch in `main.py`.
 
-**3. Implement it** — behavior still lives in code, and `validate_content()`
-refuses the JSON entry until the handler exists. Add the id constant, claim
-the handler, add a branch in `_apply_action`:
+**3. Register the behavior** — actions dispatch on their `behavior`
+field, not their id: `_apply_action` resolves `_apply_<behavior>`
+directly, so there is no dispatch code to write. `validate_content()`
+refuses the JSON entry until both pieces exist:
+
+1. Claim the name in `content.py`'s `BEHAVIOR_HANDLERS` (also the
+   editor's dropdown vocabulary):
 
 ```python
-if action_id == FISH:
-    return self._apply_fish()
+"fish": "Effort cost, skill check, yields fish.",
 ```
 
-and, near the other `_apply_*` methods:
+2. Implement it, near the other `_apply_*` methods:
 
 ```python
 def _apply_fish(self) -> Tuple[bool, str]:
@@ -236,7 +241,9 @@ def _apply_fish(self) -> Tuple[bool, str]:
 ```
 
 Return `(success, note)` — returning `False` still grants XP (handled
-centrally in `run_slot`); it just means no yield.
+centrally in `run_slot`); it just means no yield. Reusing an existing
+behavior (`"behavior": "gather_food"` on a second forage action) needs
+no code at all.
 
 **4. If it yields a new item** — append to `content/items.json`:
 
@@ -498,9 +505,9 @@ then assert both engines roll identical results.
   never edit the class or module values.
 - **Run `validate_content()`** (or just `python test_smoke.py`) — the
   schema/reference half lives in `content.py` and runs at every load;
-  the engine half checks `HANDLED_ACTIONS` coverage, the default plan,
-  code item anchors, the `BEHAVIOR_HANDLERS` ↔ `_apply_*` mapping,
-  `STAT_LABELS`-vitals-only, and balance-key bindings.
+  the engine half checks the default plan, code item anchors, the
+  `BEHAVIOR_HANDLERS` ↔ `_apply_*` mapping, `STAT_LABELS`-vitals-only,
+  and balance-key bindings.
   `python check_live.py` runs it against the LIVE files plus seeded
   play. Fix its reports before playtesting.
 - **Death only checks at day end** (`_check_game_over` in `complete_day`);

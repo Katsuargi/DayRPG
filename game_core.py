@@ -33,21 +33,15 @@ from content import (
 CONTENT: Content = load_content()
 
 # --- Action identifiers -------------------------------------------------
-# Code-side dispatch keys; content/actions.json references these ids and
-# every id needs a handler branch (checked by validate_content).
+# Action ids: the planner, save-data, and event-reference vocabulary.
+# content/actions.json entries carry these ids plus a "behavior" that
+# selects the handler (see ACTION_BEHAVIOR).
 
 GATHER_FOOD = "gather_food"
 GATHER_WOOD = "gather_wood"
 REST = "rest"
 BUILD = "build"
 CRAFT = "craft"
-
-#: Action ids the Python dispatch can actually execute. A content action
-#: missing from this set fails validate_content() before it can crash
-#: mid-day; add the handler branch here when you add the branch.
-HANDLED_ACTIONS = frozenset(
-    {GATHER_FOOD, GATHER_WOOD, REST, BUILD, CRAFT}
-)
 
 #: The plan a fresh game starts with (planner defaults).
 DEFAULT_SLOT_ACTIONS: Tuple[str, ...] = (GATHER_FOOD, GATHER_WOOD, REST)
@@ -69,6 +63,19 @@ ACTION_SKILL: Dict[str, str] = {
     entry["id"]: entry["skill"]
     for entry in CONTENT.actions
     if entry["skill"] is not None
+}
+
+#: Behavior shared by the Build and Craft actions (the "build_craft"
+#: key in content.py BEHAVIOR_HANDLERS): run_slot owns the routing
+#: because it needs the pattern picker; _apply_action rejects it.
+BUILD_CRAFT = "build_craft"
+
+#: Behavior name per action id, from each action's "behavior" field
+#: (values are keys in content.py BEHAVIOR_HANDLERS). Dispatch keys on
+#: this — an action reuses an existing behavior for free; adding a
+#: behavior name means implementing GameEngine._apply_<name>.
+ACTION_BEHAVIOR: Dict[str, str] = {
+    entry["id"]: entry["behavior"] for entry in CONTENT.actions
 }
 
 #: Attributes consulted by an event check for each action as (kind, key)
@@ -476,10 +483,11 @@ class GameEngine:
             raise RuntimeError("Time slots must run in order")
 
         action_id = self.slot_actions[index]
+        behavior = ACTION_BEHAVIOR[action_id]
         event_triggered = self.rng.random() < self.EVENT_CHANCE
 
         pattern_id: str | None = None
-        if action_id in (BUILD, CRAFT) and pattern_provider is not None:
+        if behavior == BUILD_CRAFT and pattern_provider is not None:
             # Like an event, this waits on the caller's UI for input.
             pattern_id = pattern_provider(action_id)
 
@@ -489,7 +497,7 @@ class GameEngine:
         attempted = True
         success = True
 
-        if action_id in (BUILD, CRAFT):
+        if behavior == BUILD_CRAFT:
             if pattern_id is None:
                 attempted = False
                 notes.append(
@@ -851,14 +859,20 @@ class GameEngine:
     # --- Action handlers -------------------------------------------------
 
     def _apply_action(self, action_id: str) -> Tuple[bool, str]:
-        """Apply a non-pattern action. Returns (attempt_succeeded, note)."""
-        if action_id == GATHER_FOOD:
-            return self._apply_gather_food()
-        if action_id == GATHER_WOOD:
-            return self._apply_gather_wood()
-        if action_id == REST:
-            return True, self._apply_rest()
-        raise ValueError(f"Unknown action: {action_id}")
+        """Apply a non-pattern action by dispatching on its behavior.
+
+        Returns (attempt_succeeded, note). Behavior names map to
+        GameEngine._apply_<name> methods; validate_content() proves every
+        behavior has one before play starts. build_craft routes through
+        run_slot (it needs the pattern picker) and is rejected here.
+        """
+        behavior = ACTION_BEHAVIOR[action_id]
+        if behavior == BUILD_CRAFT:
+            raise ValueError(
+                f"action {action_id!r}: build_craft dispatches in run_slot, "
+                "not _apply_action"
+            )
+        return getattr(self, f"_apply_{behavior}")()
 
     def _skill_check(self, skill_key: str) -> bool:
         """Roll d20 + skill level against ACTION_DIFFICULTY."""
@@ -975,17 +989,18 @@ class GameEngine:
             found.append(pattern)
         return found
 
-    def _apply_rest(self) -> str:
+    def _apply_rest(self) -> Tuple[bool, str]:
+        """Rest never fails; returns (True, note) for the behavior dispatch."""
         if self.inventory[FOOD_ITEM] > 0:
             self.inventory[FOOD_ITEM] -= 1
             self.health = clamp(self.health + self._recovery(REST_FOOD_HEALTH))
             self.energy = clamp(self.energy + self._recovery(REST_FOOD_ENERGY))
             self.hunger = clamp(self.hunger + REST_FOOD_HUNGER_NET)
-            return "you ate a berry and rested properly."
+            return True, "you ate a berry and rested properly."
         self.health = clamp(self.health + self._recovery(REST_EMPTY_HEALTH))
         self.energy = clamp(self.energy + self._recovery(REST_EMPTY_ENERGY))
         self.hunger = clamp(self.hunger + REST_EMPTY_HUNGER)
-        return "you rested, but an empty stomach limited the recovery."
+        return True, "you rested, but an empty stomach limited the recovery."
 
     def _apply_sleep(self) -> str:
         # The night passes whether or not there is food.
@@ -1039,7 +1054,6 @@ def validate_content() -> List[str]:
     load, and re-running it here keeps one entry point for callers. The
     checks below are the ones only game code can make:
 
-    - every content action id has a Python handler (HANDLED_ACTIONS);
     - the fresh-game default plan exists in content;
     - code-side item anchors (FOOD_ITEM/WOOD_ITEM) exist in content;
     - every BEHAVIOR_HANDLERS name has a GameEngine._apply_<name> method;
@@ -1052,12 +1066,6 @@ def validate_content() -> List[str]:
     problems: List[str] = list(validate_bundle(CONTENT))
     engine = GameEngine()
 
-    for action_id in ACTION_ORDER:
-        if action_id not in HANDLED_ACTIONS:
-            problems.append(
-                f"actions.json: {action_id!r} has no handler — add a branch "
-                "in _apply_action/run_slot and list it in HANDLED_ACTIONS"
-            )
     for action_id in DEFAULT_SLOT_ACTIONS:
         if action_id not in ACTION_LABELS:
             problems.append(

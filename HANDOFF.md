@@ -1,4 +1,4 @@
-# HANDOFF — Day Scheduler RPG (session transfer, 0b complete)
+# HANDOFF — Day Scheduler RPG (session transfer, Phase 1 complete)
 
 This doc captures where the project stands and what's next, for a fresh
 session in a new location. **Day-to-day working knowledge lives in
@@ -8,13 +8,26 @@ roadmap, pending decisions, and how this collaboration works best.
 
 ## Current state
 
-**Phases 0a and 0b are complete and fully green.** Game content lives
+**Phases 0a, 0b, and 1 are complete and fully green.** Game content lives
 in `content/*.json` (items, skills, stats, actions, patterns, events,
 balance) — the single source of truth. `game_core.py` loads it
 strictly at import (no fallback: a bad file raises
 `ContentError` naming file+field, and `main.py` refuses to launch with
 a dialog). Tooltips moved into the data records. Tests pin engine
 behavior to `tests/fixtures/content/` via `DAY_SCHEDULER_CONTENT_DIR`.
+
+**Phase 1 (behavior dispatch):** every action carries a `behavior`
+field (keys of `content.py` `BEHAVIOR_HANDLERS`); `game_core` derives
+`ACTION_BEHAVIOR` and dispatches on it — `_apply_action` resolves
+`_apply_<behavior>` directly (no id ladder), `run_slot` routes
+`build_craft` (a `BUILD_CRAFT` constant) through the pattern picker,
+and `_apply_rest` now returns `(True, note)` like every handler.
+`HANDLED_ACTIONS` was deleted — obsolete once dispatch is
+behavior-keyed; the validation chain is behavior ∈ BEHAVIOR_HANDLERS
+(content.py) ∧ every vocabulary name has `_apply_<name>` (game_core).
+RNG order untouched (handler bodies unchanged); seeded outputs are
+byte-identical to pre-Phase-1. No save-format change: the planner
+still stores action ids.
 
 **0b (slug item ids):** item ids are lowercase slugs (`berries`,
 `wood`, `herbs`, `stone`); pattern `materials` keys likewise. Player
@@ -49,26 +62,7 @@ design, so its inventory line varies per run — that's expected.
 
 Ordered; phases have one concern each (a failure has one suspect).
 
-### Next: Phase 1 — generic `gather_item` handler (own phase; no stronger model)
-
-The contract is precise; implement exactly this: `actions.json` gains a
-`behavior` field (registry vocabulary already in `content.py` →
-`BEHAVIOR_HANDLERS`; dispatch still keys on action ids until this phase
-switches it). RNG draw order must be byte-identical:
-
-1. costs (energy -, hunger +, clamped) BEFORE any draw;
-2. exactly one `randint(1, CHECK_DIE)` skill check per attempt;
-3. exactly one yield `randint(min, max)`, only on success;
-4. tool bonus applied after yield — no RNG draw.
-
-**Acceptance:** seeded suite passes unchanged (no fixture re-baseline
-for this phase) and cost-on-failure semantics preserved — the
-starvation test (seed 51, `ACTION_DIFFICULTY=999`) is the guard for
-"death is reachable". After Phase 1: optional hand-edit checkpoint —
-**the user has explicitly said they WANT the editor**, so treat the
-checkpoint as optional and the editor phases as on the roadmap.
-
-### After that: editor (phases 2+), then deferred design work
+### Next: editor (phases 2+), then deferred design work
 
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
