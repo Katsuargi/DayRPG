@@ -1,13 +1,80 @@
-# EDITOR BRIEF — Phase 2 planning (draft for multi-model review)
+# EDITOR BRIEF — Phase 2 plan (round-3 reconciled, binding)
 
-Status: draft v3 — adds round-2 inputs (D9–D13 definitions and a
-required-coverage list) after a second external pass. Answers and
-takes from either round are deliberately NOT included, to keep your
-plan independent. Purpose: paste this whole file into 1–2 other
-models and ask for *their own* plan and D-decision list — not a
-review of this draft. Bring the outputs back;
+Status: v4 — RECONCILED and binding. Two external passes received
+(round-1 reaction; round-2 full plan); every decision D1–D13 is
+closed in "Round-3 reconciled decisions" below. Definitions and both
+rounds' takes remain for provenance; a new external round happens
+only if a decision is reopened. For that: paste this whole file into
+1–2 other models and ask for *their own* plan and D-decision list —
+not a review of this draft. Bring the outputs back;
 disagreements get reconciled with stated reasons before implementation
 (same method that worked for the content-design rounds).
+
+## Round-3 reconciled decisions (binding)
+
+Two external passes received (round-1 reaction; round-2 full plan).
+Verdicts below — the definitions and both rounds' takes above stay for
+provenance. **Slicing adopted** (round-2 structure): 2a-0 loader
+hardening → 2a viewer + schema table → 2b headless write layer → 2c
+items forms (with dirty tracking + unsaved guard, moved from 2e) →
+2d remaining files (round-2's four sub-slices; moving events earlier
+is execution-time latitude) → 2e shrunk (parse-error line/column,
+external-open button, Run-check spawning check_live.py — which gains
+a directory argument and runs off the UI thread).
+
+- **D1:** schema table **in `content.py`** (precedent:
+  BEHAVIOR_HANDLERS lives there for the editor; constraint 1 keeps its
+  letter). Validator not rewritten to consume it — field-mutation
+  drift tests in 2a instead (wrong-type/missing per field must make
+  the validator complain; every live record must conform). Schema
+  carries `order_sensitive` flags and a `ref(file)` type.
+- **D2:** LF everywhere. `.gitattributes` `text eol=lf` for content +
+  fixtures — index already `i/lf` (verified) ⇒ zero repo churn; the
+  working tree flips CRLF→LF once, invisible to git. Writers emit
+  bytes explicitly (assert: no `\r` in saved files); readers accept
+  CRLF.
+- **D3:** standalone `python editor.py`; a later in-game button may
+  spawn it as a subprocess but never imports it (a button would be
+  unreachable exactly when the editor is needed).
+- **D4:** raw pane deferred; parse errors get line/column +
+  open-external + reload.
+- **D5:** up/down buttons only; new/duplicates append at the end;
+  reorder banner names the remedy: "seeded results will shift —
+  re-pin the fixture deliberately".
+- **D6:** headless `test_content_write.py` + display-skipping
+  `test_editor_gui.py`; test_smoke spawns both (check_live pattern).
+- **D7:** existing ids immutable in the editor; "Duplicate as new";
+  new-record id editable until first save (lowercase slug, unique);
+  deletes of referenced records blocked with a used-by list;
+  cross-bundle rename deferred to a headless op until actually needed.
+- **D8:** duplicate keys ⇒ file unparseable (ambiguity); fixed in the
+  shared loader in 2a-0 — the game inherits the fix.
+- **D9:** reworded per D13: Save-All stages only dirty files with no
+  own problems, validates the in-memory bundle, writes only if the
+  total problem count would not increase, then temp→replace per file
+  with in-memory-byte compensation on partial failure; untouched
+  files never rewritten; stated plainly: not atomic across files —
+  git is the safety net.
+- **D10:** canonical form on save (`ensure_ascii=False`, UTF-8,
+  `allow_nan=False`, int/float types preserved); warn when
+  canonicalizing would reformat beyond the edit (`0.10`, odd
+  indentation); BOM stripped on load (utf-8-sig, 2a-0) with notice.
+- **D11:** per-file hash at load; save refuses if disk changed —
+  clean buffer: reload/cancel; dirty buffer: reload-discard /
+  overwrite-confirmed / cancel. Check→replace TOCTOU accepted (git is
+  the net).
+- **D12:** all dropdowns/refs/used-by resolve from the in-memory
+  bundle (same-session adds usable immediately).
+- **D13:** **challenge upheld** — constraint 3 amended (above).
+  Reason: the all-or-nothing gate already exists where it matters —
+  `main.py`'s startup gate refuses launch on any problem; save-time
+  rules only need to prevent regressions while letting incremental
+  repair persist.
+- **Problem type:** `class Problem(str)` carrying `file`/`record_id`/
+  `field` — messages byte-identical, so existing substring
+  assertions, check_live prints, and ContentError need no changes.
+- **bool/int:** all 9 numeric validator sites already exclude bools
+  (verified); `type(x) is int` binds new schema + form code.
 
 ## Goal
 
@@ -17,18 +84,24 @@ refuses to load (repair mode).
 
 ## Settled constraints (do not relitigate — four review rounds decided these)
 
-Round-2 uncontested amendments, adopted: constraint 1's last sentence
-is now "open and diagnose any file, and repair whatever parses" (raw
-repair deferred); constraint 4 additionally covers key order *within*
-records. One challenge remains open — see D13.
+Round-2 amendments, adopted: constraint 1's last sentence is now
+"open and diagnose any file, and repair whatever parses" (raw repair
+deferred); constraint 4 additionally covers key order *within*
+records; and the D13 challenge was UPHELD — constraint 3 below
+carries the amended save rule (reasons in Round-3 decisions).
 
 1. Editor imports `content.py` ONLY — never `game_core.py`. It must
    open and diagnose any file, and repair whatever parses.
 2. Schema-driven forms — field lists drive widgets, not per-file hand
    layout.
 3. Validation blocks save — reuse `content.validate_bundle()` /
-   `try_load_content()` messages verbatim; never write a file that
-   fails validation.
+   `try_load_content()` messages verbatim. A file is written only
+   when it has no problems of its own; a save must never increase the
+   bundle's total problem count (counted on would-be disk state);
+   other files' problems are listed but don't block; the editor must
+   state plainly that the game won't launch until all problems are
+   fixed. (Amended round-3: bundle-wide all-or-nothing was the
+   original rule; the round-2 challenge was upheld — see D13.)
 4. JSON writes never sort keys, never reorder arrays, and never
    reorder keys within a record — planner order, event draw order,
    and the seeded RNG read file order (fixture goldens are the
@@ -169,6 +242,8 @@ Address each; use D-numbered answers where they open forks:
   atomicity: per-file, or Save-All (stage dirty files, validation,
   temp-then-replace, compensation on partial failure)? State exactly
   what is atomic, what is not, and what the safety net is.
+  → **Decided round-3:** reworded to match D13 — full rule in the
+  Round-3 decisions section.
 - **D10 — Canonical form on save.** Serialization pins (ensure_ascii,
   UTF-8, no NaN/Infinity) and what happens when canonical bytes would
   differ from disk (CRLF, `0.10`, odd indentation): reformat, warn,
@@ -179,15 +254,14 @@ Address each; use D-numbered answers where they open forks:
 - **D12 — Reference sources.** Dropdowns and used-by lists resolve
   from the in-memory bundle or from disk? Is a record added this
   session selectable immediately?
-- **D13 — Save-gate granularity (round-2 challenges settled
-  constraint 3; still open).** Original rule: bundle-wide
-  all-or-nothing gate. Challenge: with problems across several files,
-  one-at-a-time repair can never persist progress. Proposed rule: a
-  file may be written only when it has no problems of its own; a save
-  must never increase the bundle's total problem count; other files'
-  problems are listed but do not block; the editor must say plainly
-  that the game will not launch until all problems are fixed. Choose,
-  reason, and reconcile your choice with your D9 answer.
+- **D13 — Save-gate granularity. DECIDED round-3: challenge upheld.**
+  The original bundle-wide all-or-nothing rule lost to the round-2
+  challenge: with problems across several files, one-at-a-time repair
+  could never persist progress. The amended rule now lives in
+  constraint 3 — own-clean per file, never-increase total, others
+  listed-not-blocking, launch-warning stated — while bundle-wide
+  all-or-nothing remains enforced by the game's startup gate, which
+  is where it matters.
 
 ## Round-2 required coverage (risks)
 

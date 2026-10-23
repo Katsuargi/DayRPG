@@ -76,11 +76,10 @@ Ordered; phases have one concern each (a failure has one suspect).
 ### Next: editor (phases 2+), then deferred design work
 
 - **Phase 2 planning lives in `EDITOR_BRIEF.md`** — sliced 2a–2e
-  (viewer → write layer → items forms → remaining files →
-  repair/lifecycle) with D1–D13 open decisions, measured facts
-  (byte-identical round-trip), and round-1/round-2 external inputs.
-  Round 2 delivered a full independent plan; reconciliation is in
-  progress — implement only after the D13 save-gate fork is settled.
+  with D1–D13 all decided (round-3 reconciled, binding section at the
+  top of the brief; measured facts and both rounds' takes retained for
+  provenance). Next: implement 2a-0 — loader hardening (duplicate
+  keys, NaN/Infinity, structured Problems), then 2a.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
