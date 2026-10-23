@@ -113,6 +113,11 @@ Ordered; phases have one concern each (a failure has one suspect).
   `git log` / `git status` / reflog and read file state before
   re-running batches — never assume work didn't happen. Nothing here
   has ever been pushed; origin stays put until the user pushes.
+- **Round-end ledger:** after every green checkpoint commit, append
+  one line to `PROGRESS.md` (date | checkpoint | hash | tests) and
+  commit it as `PROGRESS: <checkpoint>` — a follow-up commit, because
+  the work's hash must exist before the line can name it. Docs-only
+  commits are logged too, marked docs-only.
 - **On design forks:** ask with the question tool, 2–3 options, marked
   recommendation — before any long deliberation.
 - **Multi-model habit:** the user runs plans by 2–3 models. Best
