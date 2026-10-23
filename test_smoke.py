@@ -229,6 +229,21 @@ try:
         p.startswith("balance.json: non-finite number 'NaN'") for p in probs
     ), probs
 
+    # (j continued) overflow spelling 1e400 → inf: parse_float refuses
+    # the same class (dumps would spell it "Infinity" — wrong hook).
+    shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
+    btext = (_tmp / "balance.json").read_text(encoding="utf-8")
+    assert '"EVENT_CHANCE": 0.1' in btext, "fixture shape changed"
+    (_tmp / "balance.json").write_text(
+        btext.replace('"EVENT_CHANCE": 0.1', '"EVENT_CHANCE": 1e400', 1),
+        encoding="utf-8",
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is None, "overflow floats must refuse the file"
+    assert any(
+        p.startswith("balance.json: non-finite number '1e400'") for p in probs
+    ), probs
+
     # (k) UTF-8 BOM: tolerated on read (utf-8-sig) — loads clean (D10)
     shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
     items_path = _tmp / "items.json"
