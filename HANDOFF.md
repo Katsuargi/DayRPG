@@ -105,6 +105,14 @@ Ordered; phases have one concern each (a failure has one suspect).
   thinking, small batched edits (keep tool inputs modest, ~6k chars),
   verify after every step, checkpoint often. Prefer doing over
   deliberating once a design is agreed.
+- **Lost-response continuation:** a crashed client mid-turn does NOT
+  stop the agent loop — tool calls still execute server-side; only the
+  reply is lost. A finished-looking commit nobody remembers making is
+  usually this (every commit carries the configured git identity
+  either way — authorship proves nothing). After any crash: check
+  `git log` / `git status` / reflog and read file state before
+  re-running batches — never assume work didn't happen. Nothing here
+  has ever been pushed; origin stays put until the user pushes.
 - **On design forks:** ask with the question tool, 2–3 options, marked
   recommendation — before any long deliberation.
 - **Multi-model habit:** the user runs plans by 2–3 models. Best
