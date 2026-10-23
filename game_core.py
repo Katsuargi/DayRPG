@@ -20,6 +20,7 @@ from content import (
     BEHAVIOR_HANDLERS,
     Content,
     GATHER_ITEM,
+    Problem,
     load_content,
     validate_bundle,
 )
@@ -1063,7 +1064,7 @@ class GameEngine:
         return changes
 
 
-def validate_content() -> List[str]:
+def validate_content() -> List[Problem]:
     """Content + engine contract checks; [] means all consistent.
 
     The engine-free half (schema, cross-references, balance key set) is
@@ -1123,4 +1124,6 @@ def validate_content() -> List[str]:
                 "add CONTENT.balance[...] line or fix content.py BALANCE_KEYS"
             )
 
-    return problems
+    # One conversion point: engine-appended plain strings join the
+    # Problems from validate_bundle (text unchanged, structure parsed).
+    return [Problem(p) for p in problems]

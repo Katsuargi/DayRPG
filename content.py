@@ -25,6 +25,7 @@ these files with sort_keys=True.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -82,6 +83,33 @@ class ContentError(Exception):
             "content failed validation — fix content/*.json:\n"
             + "\n".join(f"  - {p}" for p in self.problems)
         )
+
+
+#: House message shape: '<file>.json: ['<record>': ['<field>': ]...] text'
+#: — rule 2 guarantees file+field naming, so structure parses off the
+#: message text itself; engine messages ('game_core: ...') match nothing
+#: and keep all attributes None.
+_PROBLEM_SHAPE = re.compile(
+    r"^([A-Za-z0-9_]+\.json)(?:: '([^']+)')?(?:: '([^']+)')?"
+)
+
+
+class Problem(str):
+    """A validation message with structure for editors.
+
+    str(message) is byte-identical to what callers always appended, so
+    every existing consumer (substring asserts, prints, ContentError)
+    is untouched; `.file`, `.record_id`, `.field` are derived from the
+    message shape — consumers never re-parse text themselves.
+    """
+
+    def __new__(cls, message: str) -> "Problem":
+        obj = super().__new__(cls, message)
+        match = _PROBLEM_SHAPE.match(message)
+        obj.file = match.group(1) if match else None
+        obj.record_id = match.group(2) if match else None
+        obj.field = match.group(3) if match else None
+        return obj
 
 
 @dataclass
@@ -461,7 +489,7 @@ def _check_balance(balance: Any, problems: List[str]) -> None:
         problems.append("balance.json: 'EVENT_CHANCE' must be between 0 and 1")
 
 
-def validate_bundle(content: Content) -> List[str]:
+def validate_bundle(content: Content) -> List[Problem]:
     """All engine-free checks; [] means the content set is consistent.
 
     Game-contract checks (handler methods exist, STAT_LABELS match engine
@@ -483,14 +511,52 @@ def validate_bundle(content: Content) -> List[str]:
     _check_patterns(content.patterns, skill_ids, item_ids, problems)
     _check_events(content.events, action_ids, problems)
     _check_balance(content.balance, problems)
-    return problems
+    # One conversion point: messages become Problems (text unchanged)
+    # with .file/.record_id/.field parsed from the house message shape.
+    return [Problem(p) for p in problems]
 
 
 # --- Loading ---------------------------------------------------------------
 
+class _NonStandardJson(ValueError):
+    """Non-standard JSON the loader refuses at parse time (loud)."""
+
+
+def _reject_duplicate_keys(
+    pairs: List[Tuple[str, Any]],
+) -> Dict[str, Any]:
+    """object_pairs_hook: a repeated key is ambiguous — refuse the file."""
+    seen: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise _NonStandardJson(
+                f"duplicate key {key!r} — which value wins is ambiguous"
+            )
+        seen[key] = value
+    return seen
+
+
+def _reject_constant(value: str) -> None:
+    """parse_constant: NaN/Infinity/-Infinity are not standard JSON.
+
+    Always raises — the constant never becomes a value.
+    """
+    raise _NonStandardJson(f"non-finite number {value!r} is not allowed")
+
+
+def _finite_float(value: str) -> float:
+    """parse_float: catches overflow spellings like 1e400 (→ inf)."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise _NonStandardJson(
+            f"non-finite number {value!r} is not allowed"
+        )
+    return number
+
+
 def try_load_content(
     path: Optional[Path] = None,
-) -> Tuple[Optional[Content], List[str]]:
+) -> Tuple[Optional[Content], List[Problem]]:
     """Load + validate without throwing: (content_or_None, problems).
 
     content is None only when a file is missing or unparseable (nothing
@@ -503,18 +569,27 @@ def try_load_content(
     for name in CONTENT_FILES:
         file_path = directory / f"{name}.json"
         try:
-            text = file_path.read_text(encoding="utf-8")
+            # utf-8-sig: a BOM is tolerated (stripped), everything else
+            # about the bytes is unchanged (D10 keeps saves BOM-free).
+            text = file_path.read_text(encoding="utf-8-sig")
         except OSError as exc:
             problems.append(f"{name}.json: cannot read ({exc})")
             continue
         try:
-            raw[name] = json.loads(text)
+            raw[name] = json.loads(
+                text,
+                object_pairs_hook=_reject_duplicate_keys,
+                parse_constant=_reject_constant,
+                parse_float=_finite_float,
+            )
         except json.JSONDecodeError as exc:
             problems.append(
                 f"{name}.json: line {exc.lineno} column {exc.colno}: {exc.msg}"
             )
+        except _NonStandardJson as exc:
+            problems.append(f"{name}.json: {exc}")
     if problems:
-        return None, problems
+        return None, [Problem(p) for p in problems]
     content = Content(
         items=raw["items"],
         skills=raw["skills"],

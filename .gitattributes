@@ -1,0 +1,2 @@
+content/*.json text eol=lf
+tests/fixtures/content/*.json text eol=lf

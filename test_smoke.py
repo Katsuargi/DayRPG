@@ -190,6 +190,51 @@ try:
     assert any("'yield'" in p for p in probs), probs
     assert any("'tool_bonus'" in p for p in probs), probs
     assert any("'success'" in p and "template" in p for p in probs), probs
+    # 2a-0 structured problems: file/record/field parse off the shape
+    typed = next(p for p in probs if p.startswith(gprefix))
+    assert isinstance(typed, content.Problem)
+    assert typed.file == "actions.json", typed.file
+    assert typed.record_id == "gather_food", typed.record_id
+    assert typed.field == "gather", typed.field
+
+    # (i) duplicate JSON key: refuses the file, names file + key (D8)
+    shutil.copy(_FIXTURE / "actions.json", _tmp / "actions.json")
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    text = (_tmp / "items.json").read_text(encoding="utf-8")
+    assert '"name": "Berries",' in text, "fixture shape changed"
+    (_tmp / "items.json").write_text(
+        text.replace(
+            '"name": "Berries",',
+            '"name": "Berries",\n    "id": "berries",',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is None, "duplicate keys must refuse the file"
+    assert any(
+        p.startswith("items.json: duplicate key 'id'") for p in probs
+    ), probs
+
+    # (j) non-finite numbers: NaN is not JSON — refuses, names file+value
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    balance = json.loads((_tmp / "balance.json").read_text(encoding="utf-8"))
+    balance["EVENT_CHANCE"] = float("nan")
+    (_tmp / "balance.json").write_text(
+        json.dumps(balance, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is None, "NaN must refuse the file"
+    assert any(
+        p.startswith("balance.json: non-finite number 'NaN'") for p in probs
+    ), probs
+
+    # (k) UTF-8 BOM: tolerated on read (utf-8-sig) — loads clean (D10)
+    shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
+    items_path = _tmp / "items.json"
+    items_path.write_bytes(b"\xef\xbb\xbf" + items_path.read_bytes())
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None and probs == [], (bundle, probs)
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")

@@ -78,8 +78,12 @@ Ordered; phases have one concern each (a failure has one suspect).
 - **Phase 2 planning lives in `EDITOR_BRIEF.md`** — sliced 2a–2e
   with D1–D13 all decided (round-3 reconciled, binding section at the
   top of the brief; measured facts and both rounds' takes retained for
-  provenance). Next: implement 2a-0 — loader hardening (duplicate
-  keys, NaN/Infinity, structured Problems), then 2a.
+  provenance). **2a-0 (loader hardening) is done and green**: duplicate
+  keys and non-finite numbers refuse at parse (file + token named),
+  UTF-8 BOM tolerated, problems are `Problem` (str subclass with
+  `.file`/`.record_id`/`.field`), `.gitattributes` pins content to LF
+  (zero repo churn — verified by empty diff). Next: 2a — read-only
+  viewer + schema table.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation

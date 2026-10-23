@@ -501,6 +501,10 @@ then assert both engines roll identical results.
   missing or broken file fails loudly at import (`ContentError` names
   file and field; the game refuses to launch with a dialog). Roll back
   with your backup/git — never expect old defaults to cover for you.
+- **The loader refuses non-standard JSON**: duplicate keys and
+  `NaN`/`Infinity` fail loudly at parse (file + offending token named);
+  a UTF-8 BOM is tolerated on read. Problems are `Problem`s — a str
+  subclass carrying `.file`/`.record_id`/`.field` for the editor.
 - **Never write content files with sorted keys** — planner order, event
   draw order, and the seeded RNG all read file order. The fixture
   goldens fail loudly if an editor sorts them.
