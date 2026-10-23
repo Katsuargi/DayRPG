@@ -1,8 +1,11 @@
 # EDITOR BRIEF — Phase 2 planning (draft for multi-model review)
 
-Status: draft v1, awaiting independent critique. Purpose: paste this
-whole file into 1–2 other models and ask for *their own* plan and
-D-decision list — not a review of this draft. Bring the outputs back;
+Status: draft v2 — v1 plus the "Round-1 checklist" and D7–D8 appended
+after an external first pass. Its provisional takes on D1–D6 were
+deliberately NOT included, to keep your plan independent. Purpose:
+paste this whole file into 1–2 other models and ask for *their own*
+plan and D-decision list — not a review of this draft. Bring the
+outputs back;
 disagreements get reconciled with stated reasons before implementation
 (same method that worked for the content-design rounds).
 
@@ -84,7 +87,11 @@ Each slice ends green + committed; no slice depends on a later one.
   grows content.py; (c) violates the schema-driven rule.
 - **D2 — Line-ending policy on write.** Preserve each file's existing
   EOLs (byte-stable, zero churn) vs normalize all to LF (cleaner git,
-  one-time churn across every content file).
+  one-time churn across every content file). Whichever you pick: pin
+  it with a `.gitattributes` entry for the content files (this repo
+  runs `core.autocrlf=true`) so git can't move the goalposts, and
+  handle newlines explicitly in read/write — the `\r\r\n` bug comes
+  from mixing translated and untranslated newline handling.
 - **D3 — Launch integration.** Standalone `python editor.py` vs a
   button in main.py vs both.
 - **D4 — Raw-text repair in the first ship?** 2e's unparseable-file
@@ -104,7 +111,48 @@ editing (numbers only for now), theming beyond main.py's palette.
 ## Output format
 
 1. Your slicing of 2a–2e (agree / merge / split — with reasons).
-2. D1–D6 decisions with reasons; add D7+ if you see missed decisions.
+2. D1–D8 decisions with reasons; add D9+ if you see missed decisions.
 3. Risks or tripwires this draft missed.
 4. Any "settled constraint" you'd challenge — flag it explicitly; a
    challenge reopens a decided question and needs a reason.
+
+## Round-1 checklist (required coverage — from an external first pass)
+
+Address each; use D-numbered answers where they open forks:
+
+- **Atomic writes:** temp file in the *same directory* as the target
+  (cross-volume replace fails), flush + fsync before `os.replace`; on
+  Windows `os.replace` can raise PermissionError while antivirus or
+  another editor holds the file — brief retry, then fail loudly;
+  delete the temp file on every failure path.
+- **Multi-file edits:** stage every affected file, validate the whole
+  bundle in memory, only then replace — never leave a half-applied
+  set.
+- **Duplicate JSON keys:** `json.loads` silently keeps the last one —
+  detect with `object_pairs_hook` and fail naming file + key (a
+  hand-edit data-loss vector; the game's own loader has the same gap
+  today).
+- **Encoding:** pin `ensure_ascii=False` explicitly (measured:
+  required for byte stability — `items.json` contains an em-dash) and
+  UTF-8 end-to-end; include a non-ASCII value in the tests.
+- **Float formatting:** `json.dumps` canonicalizes (`0.10` → `0.1`) —
+  live content round-trips byte-identical today; decide how the
+  byte-stable guarantee is stated for hand-edited non-canonical
+  floats.
+- **No silent override:** under settled constraint 3, save stays
+  blocked on validation errors. If your plan proposes a WIP override,
+  that reopens constraint 3 (output format item 4) — and must state
+  how the editor warns that the game will refuse to launch.
+
+## New decisions opened by round 1
+
+- **D7 — Item-id rename policy.** Ids are save data (hard rule 4), but
+  pre-release saves were explicitly judged expendable (the 0b
+  decision). Options: (a) refuse id edits on existing records; (b)
+  allow with type-to-confirm, cross-file staging (see checklist), and
+  whole-bundle validation; (c) allow with a loud warning. Also state
+  how *new* records differ (id editable until first save?).
+- **D8 — Duplicate-key detection placement.** Decide *where* it lands:
+  a separate pre-2a loader fix (it is a live gap in the game loader,
+  in the spirit of hard rule 2), inside 2a's viewer, or in the 2b
+  write layer — not *whether*.
