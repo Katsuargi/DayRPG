@@ -22,6 +22,7 @@ try:
         EVENT_DIFFICULTY,
         GameEngine,
         INVENTORY_TOOLTIPS,
+        ITEM_NAMES,
         ITEM_ORDER,
         PATTERNS,
         SKILL_NAMES,
@@ -333,7 +334,7 @@ class DaySchedulerApp:
             var = tk.StringVar()
             self.inventory_vars[item] = var
             row = self._kv_row(
-                panel, row, item, var,
+                panel, row, ITEM_NAMES.get(item, item), var,
                 tooltip=INVENTORY_TOOLTIPS.get(item),
             )
 
@@ -693,11 +694,11 @@ class DaySchedulerApp:
             owned_count = store.get(pattern.id, 0)
             owned = pattern.kind == BUILD and bool(owned_count)
             costs = ", ".join(
-                f"{qty} {item}"
+                f"{qty} {ITEM_NAMES.get(item, item)}"
                 for item, qty in pattern.materials.items()
             )
             have = ", ".join(
-                f"{item} {engine.inventory.get(item, 0)}"
+                f"{ITEM_NAMES.get(item, item)} {engine.inventory.get(item, 0)}"
                 for item in pattern.materials
             )
             material_missing = any(

@@ -5,7 +5,7 @@
     "skill": "carpentry",
     "skill_req": 1,
     "materials": {
-      "Wood": 5
+      "wood": 5
     },
     "work": 1,
     "description": "A large piece of wood leaning against a tree. Keeps the weather out, at least.",
@@ -17,7 +17,7 @@
     "skill": "carving",
     "skill_req": 1,
     "materials": {
-      "Wood": 3
+      "wood": 3
     },
     "work": 1,
     "description": "A wooden axe. Technically better than nothing.",

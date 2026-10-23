@@ -51,8 +51,8 @@ You'll mostly read simple code, but these differences bite:
   as falsy — in JS empty objects and arrays are *truthy*. The code leans
   on Python's rule: `if self.tools.get("wood_axe"):` means "owns at least
   one" (missing key → `None`, count 0 → falsy).
-- **dict `{}` ≈ JS object/Map.** `self.inventory.get("Wood", 0)` is
-  `obj.Wood ?? 0`. `.get()` never throws; it returns the default.
+- **dict `{}` ≈ JS object/Map.** `self.inventory.get("wood", 0)` is
+  `obj.wood ?? 0`. `.get()` never throws; it returns the default.
 - **tuple `()` ≈ frozen array.** Used for fixed lists like `SLOT_NAMES`.
 - **f-strings:** `` f"you found {amount} berries." `` ≈ `` `you found ${amount} berries.` ``
 - **Type hints** (`amount: int`, `-> bool`) are decoration for readers —
@@ -230,7 +230,7 @@ def _apply_fish(self) -> Tuple[bool, str]:
     self.hunger = clamp(self.hunger + 5)
     if self._skill_check("fishing"):
         amount = self.rng.randint(1, 2)
-        self.inventory["Fish"] += amount
+        self.inventory["fish"] += amount
         return True, f"you caught fish at the river ({amount} fish)."
     return False, "you cast all morning, but nothing bit."
 ```
@@ -241,11 +241,14 @@ centrally in `run_slot`); it just means no yield.
 **4. If it yields a new item** — append to `content/items.json`:
 
 ```json
-{ "id": "Fish", "name": "Fish", "start": 0,
+{ "id": "fish", "name": "Fish", "start": 0,
   "tooltip": "Food. Restores health and energy." }
 ```
 
-Display order = array position (insert before `"Stone"` if you care
+`id` is a lowercase slug — code, saves, and cross-references (pattern
+materials, behavior anchors) use it; `name` is the display string the
+player sees in the inventory panel and change lists. Display order =
+array position (insert before `"stone"` if you care
 where it shows up). The inventory panel, change summaries, and
 validation pick it up automatically; `start` is how many you begin the
 game with. Item ids double as save keys — keep them stable.
@@ -368,7 +371,7 @@ Add one entry to `content/patterns.json` — every field:
   "kind": "build",
   "skill": "carpentry",
   "skill_req": 2,
-  "materials": { "Wood": 8 },
+  "materials": { "wood": 8 },
   "work": 2,
   "description": "A rough fence around a small garden patch.",
   "effect": "+1 berries per Gather Food."
@@ -408,7 +411,7 @@ fen = GameEngine(seed=43)
 fen.EVENT_CHANCE = 0.0
 fen.ACTION_DIFFICULTY = 0        # attempts always succeed
 fen.skills["carpentry"].level = 2      # meets skill_req
-fen.inventory["Wood"] = 16             # work=2 -> two attempts at 8 each
+fen.inventory["wood"] = 16             # work=2 -> two attempts at 8 each
 fen.set_slot_action(0, BUILD)
 fen.set_slot_action(1, BUILD)
 fen.begin_day()

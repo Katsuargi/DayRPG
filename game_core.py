@@ -227,13 +227,19 @@ SLEEP_EMPTY_ENERGY = CONTENT.balance["SLEEP_EMPTY_ENERGY"]
 
 # --- Items --------------------------------------------------------------
 # FOOD_ITEM/WOOD_ITEM are code-side behavior anchors (rest and sleep eat
-# FOOD_ITEM); their values are content ids, checked by validate_content().
+# FOOD_ITEM); their values are content ids (slugs), checked by
+# validate_content().
 
-FOOD_ITEM = "Berries"
-WOOD_ITEM = "Wood"
+FOOD_ITEM = "berries"
+WOOD_ITEM = "wood"
 
 #: Inventory rendering / accounting order (= content/items.json order).
 ITEM_ORDER: Tuple[str, ...] = tuple(entry["id"] for entry in CONTENT.items)
+
+#: Display label per item id (ids are stable save data; names may change).
+ITEM_NAMES: Dict[str, str] = {
+    entry["id"]: entry["name"] for entry in CONTENT.items
+}
 
 #: (snapshot key, display label) for stats shown in change lists.
 STAT_LABELS: Tuple[Tuple[str, str], ...] = (
@@ -280,7 +286,8 @@ def aggregate_changes(results: List["SlotResult"]) -> List[Change]:
             totals[label] = totals.get(label, 0) + delta
     # Items first (preferred order), then stats, then anything unknown —
     # matching how GameEngine._diff() reports changes.
-    known = list(ITEM_ORDER) + [label for _, label in STAT_LABELS]
+    known = [ITEM_NAMES.get(item, item) for item in ITEM_ORDER]
+    known += [label for _, label in STAT_LABELS]
     ordered: List[Change] = []
     for label in known:
         if totals.get(label):
@@ -915,7 +922,8 @@ class GameEngine:
             )
             return False, False
         missing = [
-            f"{qty - self.inventory.get(item, 0)} more {item}"
+            f"{qty - self.inventory.get(item, 0)} more "
+            f"{ITEM_NAMES.get(item, item)}"
             for item, qty in pattern.materials.items()
             if self.inventory.get(item, 0) < qty
         ]
@@ -1015,7 +1023,7 @@ class GameEngine:
         for item in items:
             delta = self.inventory.get(item, 0) - old_items.get(item, 0)
             if delta:
-                changes.append((item, delta))
+                changes.append((ITEM_NAMES.get(item, item), delta))
         for key, label in STAT_LABELS:
             delta = getattr(self, key) - snapshot["stats"][key]
             if delta:

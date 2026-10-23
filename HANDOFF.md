@@ -1,4 +1,4 @@
-# HANDOFF — Day Scheduler RPG (session transfer, 0a complete)
+# HANDOFF — Day Scheduler RPG (session transfer, 0b complete)
 
 This doc captures where the project stands and what's next, for a fresh
 session in a new location. **Day-to-day working knowledge lives in
@@ -8,13 +8,28 @@ roadmap, pending decisions, and how this collaboration works best.
 
 ## Current state
 
-**Phase 0a (content migration) is complete and fully green.** Game
-content lives in `content/*.json` (items, skills, stats, actions,
-patterns, events, balance) — the single source of truth. `game_core.py`
-loads it strictly at import (no fallback: a bad file raises
+**Phases 0a and 0b are complete and fully green.** Game content lives
+in `content/*.json` (items, skills, stats, actions, patterns, events,
+balance) — the single source of truth. `game_core.py` loads it
+strictly at import (no fallback: a bad file raises
 `ContentError` naming file+field, and `main.py` refuses to launch with
 a dialog). Tooltips moved into the data records. Tests pin engine
 behavior to `tests/fixtures/content/` via `DAY_SCHEDULER_CONTENT_DIR`.
+
+**0b (slug item ids):** item ids are lowercase slugs (`berries`,
+`wood`, `herbs`, `stone`); pattern `materials` keys likewise. Player
+facing strings come from each item's `name` field through
+`game_core.ITEM_NAMES` (same pattern as STAT_NAMES/SKILL_NAMES) —
+`_diff()`, `aggregate_changes()`, the inventory panel, and the pattern
+picker all map through it, so no display string changed. No save
+migration, per decision: `from_dict` merges defaults, so a stale save
+loads but keeps old-named stray keys. Fixture re-pinned in the same
+change; the item-order golden is now
+`("berries", "wood", "herbs", "stone")`.
+
+**Git is set up** (the point of the folder move): `origin` =
+https://github.com/Katsuargi/DayRPG on branch `main`; commit small and
+often. Pre-0b baseline: `b20a60c`.
 
 Verify any fresh checkout/session with:
 
@@ -24,43 +39,16 @@ python check_live.py    # LIVE content: full validation + 9 seeded days
 python main.py          # startup gate runs check_live's function first
 ```
 
-All three were green as of the 0a handoff, including failure paths
-proven deliberately (corrupted content → exit 1 naming the bad key).
-
-### Moving the folder
-
-Safe: there are **no absolute paths anywhere** (verified — everything
-resolves from `Path(__file__)`). Move the folder, run the two commands
-above, done. Then, when convenient: `git init` + a private remote
-(`.gitignore` already exists: `__pycache__/`, `*.pyc`,
-`screenshot.png`). The project previously lived under
-`AppData\Local\Cline\` — an app-data folder that a Cline reset could
-delete; that's why it's moving.
+All three were green at the 0b handoff, failure paths proven
+deliberately (corrupted content → exit 1 naming the bad key). Seeded
+values are identical run-to-run; the GUI smoke engine is unseeded by
+design, so its inventory line varies per run — that's expected.
 
 ## Roadmap and pending decisions
 
 Ordered; phases have one concern each (a failure has one suspect).
 
-### Next: 0b — slug item ids (ORDINARY WORK — no stronger model needed)
-
-Rationale for doing soon: item references in the data files are still
-minimal; every later content entry adds a rename target.
-
-- Grep pass for hardcoded item strings: `FOOD_ITEM`/`WOOD_ITEM`
-  constants, behavior methods, `main.py`, `test_smoke.py`, DEV_GUIDE
-  examples (`"Wood"`, `"Berries"`, `"Herbs"`, `"Stone"`).
-- `items.json` → slug ids (`"berries"`) + `name` field for display
-  (display strings must stay unchanged: change lists, summaries).
-- **No legacy save map, no save-format changes at all.** Decision: no
-  saves exist worth protecting (pre-release, solo dev). `from_dict`
-  already merges with defaults, so a stale save stays loadable-but-
-  messy rather than crashing. Real migration machinery gets written at
-  the first migration we actually need (trivial then; git history will
-  show the format).
-- Gates: re-pin fixture (`content/` → `tests/fixtures/content/`), update
-  fixture goldens in the same change, full suite + `check_live.py` green.
-
-### Then: Phase 1 — generic `gather_item` handler (own phase; no stronger model)
+### Next: Phase 1 — generic `gather_item` handler (own phase; no stronger model)
 
 The contract is precise; implement exactly this: `actions.json` gains a
 `behavior` field (registry vocabulary already in `content.py` →
@@ -121,8 +109,8 @@ checkpoint as optional and the editor phases as on the roadmap.
    draw order, and seeded RNG read file order (goldens are the
    tripwire).
 4. **Ids are save data** — pattern/item/event/action ids never get
-   renamed casually (0b's item rename is the one deliberate exception,
-   display names held constant).
+   renamed casually (the 0b item rename was the one deliberate
+   exception; display names were held constant via `ITEM_NAMES`).
 5. **New engine state ⇒ `to_dict` + `from_dict` with defaults.**
 6. Every content change: `python test_smoke.py` (includes the live
    gate); re-pin the fixture deliberately when engine tests should

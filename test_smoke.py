@@ -32,6 +32,7 @@ from game_core import (  # noqa: E402
     FOOD_ITEM,
     GATHER_FOOD,
     GATHER_WOOD,
+    ITEM_NAMES,
     ITEM_ORDER,
     MAX_VITAL,
     PATTERNS,
@@ -67,7 +68,7 @@ os.environ["DAY_SCHEDULER_CONTENT_DIR"] = str(_FIXTURE)  # restore the pin
 # or update these goldens DELIBERATELY together with a fixture re-pin
 # (see DEV_GUIDE "Testing workflow").
 assert ACTION_ORDER == (GATHER_FOOD, GATHER_WOOD, REST, BUILD, CRAFT)
-assert ITEM_ORDER == ("Berries", "Wood", "Herbs", "Stone")
+assert ITEM_ORDER == ("berries", "wood", "herbs", "stone")
 assert tuple(PATTERNS) == ("lean_to", "wood_axe")
 assert tuple(RANDOM_EVENTS) == (
     "wandering_thoughts", "stray_berry_bush", "howling_wind", "quiet_moment",
@@ -334,7 +335,7 @@ fail_eng.ACTION_DIFFICULTY = 999          # auto-fail every check
 fail_eng.begin_day()
 miss = fail_eng.run_slot(0)               # default: Gather Food
 assert miss.success is False
-assert not any(lbl == FOOD_ITEM for lbl, _ in miss.changes)  # no yield
+assert not any(lbl == ITEM_NAMES[FOOD_ITEM] for lbl, _ in miss.changes)  # no yield
 assert ("XP", ACTION_XP) in miss.changes  # failure still teaches
 assert any(lbl == "Foraging XP" for lbl, _ in miss.changes)
 
@@ -566,7 +567,7 @@ app.engine.set_slot_action(0, BUILD)
 app.slot_combos[0].set("Build")
 app.engine.set_slot_action(1, GATHER_FOOD)
 app.slot_combos[1].set("Gather Food")
-app.engine.inventory["Wood"] = 10
+app.engine.inventory["wood"] = 10
 
 app.engine.EVENT_CHANCE = 1.0   # force event popups to appear
 root.after(100, auto_click)
@@ -601,7 +602,8 @@ print("Top bar :", app.day_var.get(), "|", app.health_var.get(), "|",
       app.gold_var.get())
 print("Skills  :", {k: (lv.get(), xp.get())
                     for k, (lv, xp) in app.skill_vars.items()})
-print("Inventory:", {k: v.get() for k, v in app.inventory_vars.items()})
+print("Inventory:", {ITEM_NAMES.get(k, k): v.get()
+                     for k, v in app.inventory_vars.items()})
 print("Status  :", app.status_var.get())
 
 # --- GUI: game-over screen locks the planner; Begin Anew restarts ----------
