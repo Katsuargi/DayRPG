@@ -75,6 +75,12 @@ Ordered; phases have one concern each (a failure has one suspect).
 
 ### Next: editor (phases 2+), then deferred design work
 
+- **Phase 2 planning lives in `EDITOR_BRIEF.md`** — sliced 2a–2e
+  (viewer → write layer → items forms → remaining files →
+  repair/lifecycle) with D1–D6 open decisions and measured facts
+  (byte-identical round-trip). It is a draft awaiting independent
+  multi-model critique: each model produces *its own* plan for the
+  same brief; reconcile with stated reasons before implementing.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
