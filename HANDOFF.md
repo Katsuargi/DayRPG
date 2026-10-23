@@ -118,8 +118,9 @@ Ordered; phases have one concern each (a failure has one suspect).
   usually this (every commit carries the configured git identity
   either way — authorship proves nothing). After any crash: check
   `git log` / `git status` / reflog and read file state before
-  re-running batches — never assume work didn't happen. Nothing here
-  has ever been pushed; origin stays put until the user pushes.
+  re-running batches — never assume work didn't happen. Pushes are
+  user-directed: the agent pushes to origin only when explicitly
+  asked (first push: 2026-10-23, user-requested).
 - **Round-end ledger:** after every green checkpoint commit, append
   one line to `PROGRESS.md` (date | checkpoint | hash | tests) and
   commit it as `PROGRESS: <checkpoint>` — a follow-up commit, because
