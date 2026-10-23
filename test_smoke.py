@@ -254,6 +254,78 @@ finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")
 
+# --- Schema drift: SCHEMA must mirror the validator (D1) -------------------
+# Coverage: every key of every live record is declared in SCHEMA.
+def _records_of(fname: str, bundle) -> list:
+    data = getattr(bundle, fname)
+    if fname == "balance":
+        return [data]
+    return data if isinstance(data, list) else list(data.values())
+
+
+for _fname, _spec in content.SCHEMA.items():
+    for _rec in _records_of(_fname, live_bundle):
+        _extra = set(_rec) - set(_spec["fields"])
+        assert not _extra, (_fname, _extra)
+
+# Wrong-type: every declared field rejects a wrong-typed value.
+# (Nested gather sub-fields are covered individually by loader case (h).)
+_WRONG = {  # scalar -> what a wrong-typed value looks like
+    "slug": 7, "string": 7, "int": "seven", "bool": 7, "number": "seven",
+}
+
+
+def _wrong_value(spec):
+    """A value no type in the vocabulary should accept."""
+    if isinstance(spec, str):
+        return _WRONG.get(spec, 7)
+    if spec[0] == "enum":
+        return "not-an-option"
+    return 7  # opt/nullable/ref/pair/list/dict_int/nested all reject 7
+
+
+def _mutated(fname: str, rec: dict) -> dict:
+    """The bundle dict with fname's first record replaced by rec."""
+    mut = {f: getattr(live_bundle, f) for f in content.CONTENT_FILES}
+    if isinstance(mut[fname], list):
+        mut[fname] = [rec] + list(mut[fname])[1:]
+    elif fname == "balance":
+        mut[fname] = rec
+    else:  # dict-keyed: replace the value under the first key
+        first = next(iter(mut[fname]))
+        rest = {k: v for k, v in mut[fname].items() if k != first}
+        mut[fname] = {first: rec, **rest}
+    return mut
+
+
+for _fname, _spec in content.SCHEMA.items():
+    _rec = _records_of(_fname, live_bundle)[0]
+    for _field, _fspec in _spec["fields"].items():
+        _bad = dict(_rec)
+        _bad[_field] = _wrong_value(_fspec)
+        _probs = content.validate_bundle(
+            content.Content(source=live_bundle.source,
+                            **_mutated(_fname, _bad))
+        )
+        assert any(p.file == f"{_fname}.json" for p in _probs), (
+            _fname, _field, _probs)
+
+# Required deletion: removing a required field is rejected
+# (opt/nullable fields are exempt — absence must stay legal).
+for _fname, _spec in content.SCHEMA.items():
+    _rec = _records_of(_fname, live_bundle)[0]
+    for _field, _fspec in _spec["fields"].items():
+        if isinstance(_fspec, tuple) and _fspec[0] in ("opt", "nullable"):
+            continue
+        _gone = {k: v for k, v in _rec.items() if k != _field}
+        _probs = content.validate_bundle(
+            content.Content(source=live_bundle.source,
+                            **_mutated(_fname, _gone))
+        )
+        assert any(p.file == f"{_fname}.json" for p in _probs), (
+            _fname, _field, _probs)
+print("Schema drift OK")
+
 # --- Startup gate: the exact function main.py runs before opening ----------
 gate_problems = run_live_check()
 assert gate_problems == [], gate_problems
@@ -737,3 +809,15 @@ root.update()
 
 root.destroy()
 print("GUI smoke test OK")
+
+# --- GUI smoke: the read-only viewer (fresh interpreter; skips headless) ----
+_spawn = subprocess.run(
+    [sys.executable, str(_ROOT / "test_editor_gui.py")],
+    capture_output=True,
+    text=True,
+    cwd=str(_ROOT),
+)
+assert _spawn.returncode == 0, (
+    "test_editor_gui.py failed:\n" + _spawn.stdout + _spawn.stderr
+)
+print("test_editor_gui.py OK")

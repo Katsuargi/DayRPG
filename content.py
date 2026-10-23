@@ -73,6 +73,97 @@ PATTERN_KINDS: Tuple[str, ...] = ("build", "craft")
 #: Check contributor kinds (must match game_core's ACTION_CHECKS shape).
 CHECK_KINDS: Tuple[str, ...] = ("stats", "skills")
 
+#: Field-spec vocabulary for SCHEMA (D1): the viewer reads it; the
+#: validator stays imperative and drift is pinned by test_smoke's
+#: mutation loops. Specs: "slug" | "string" | "int" | "bool" | "number";
+#: ("opt", T) absent-OK; ("nullable", T) may be null; ("enum", options);
+#: ("ref", file) record id; ("dyn_ref", {sibling value: file}) id in the
+#: file named by a sibling field; ("list", T); ("pair", T1, T2);
+#: ("dict_int", file) ref -> positive-int map; ("nested", fields) block.
+#:
+#: order_sensitive: file order is meaningful data (planner order, event
+#: draw order, golden tuples) — the editor must never sort these files.
+SCHEMA: Dict[str, dict] = {
+    "items": {
+        "kind": "array",
+        "order_sensitive": True,
+        "fields": {
+            "id": "slug",
+            "name": "string",
+            "start": "int",
+            "tooltip": ("opt", "string"),
+        },
+    },
+    "skills": {
+        "kind": "dict",
+        "order_sensitive": True,
+        "fields": {
+            "name": "string",
+            "start_level": "int",
+            "tooltip": ("opt", "string"),
+        },
+    },
+    "stats": {
+        "kind": "dict",
+        "order_sensitive": True,
+        "fields": {
+            "name": "string",
+            "start_level": "int",
+            "tooltip": ("opt", "string"),
+        },
+    },
+    "actions": {
+        "kind": "array",
+        "order_sensitive": True,
+        "fields": {
+            "id": "slug",
+            "label": "string",
+            "behavior": ("enum", tuple(BEHAVIOR_HANDLERS)),
+            "skill": ("nullable", ("ref", "skills")),
+            "checks": ("list", ("pair", ("enum", CHECK_KINDS),
+                                ("dyn_ref", {"stats": "stats",
+                                             "skills": "skills"}))),
+            "stat_xp": ("nullable", ("pair", ("ref", "stats"), "int")),
+            "gather": ("opt", ("nested", {
+                "item": ("ref", "items"),
+                "yield": ("pair", "int", "int"),
+                "success": "string",
+                "fail": "string",
+                "tool_bonus": ("opt", ("pair", ("ref", "patterns"), "int")),
+                "difficulty": ("opt", "int"),
+            })),
+        },
+    },
+    "patterns": {
+        "kind": "dict",
+        "order_sensitive": True,
+        "fields": {
+            "name": "string",
+            "kind": ("enum", PATTERN_KINDS),
+            "skill": ("ref", "skills"),
+            "skill_req": "int",
+            "materials": ("dict_int", "items"),
+            "work": "int",
+            "description": "string",
+            "effect": ("opt", "string"),
+        },
+    },
+    "events": {
+        "kind": "dict",
+        "order_sensitive": True,
+        "fields": {
+            "text": "string",
+            "actions": ("list", ("ref", "actions")),
+            "check": "bool",
+        },
+    },
+    "balance": {
+        "kind": "flat",
+        "order_sensitive": False,
+        "fields": {key: "number" for key in BALANCE_KEYS},
+    },
+}
+
 
 class ContentError(Exception):
     """Content failed to load; `.problems` lists 'file: ...' messages."""

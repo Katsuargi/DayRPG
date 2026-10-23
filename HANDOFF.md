@@ -82,8 +82,15 @@ Ordered; phases have one concern each (a failure has one suspect).
   keys and non-finite numbers refuse at parse (file + token named),
   UTF-8 BOM tolerated, problems are `Problem` (str subclass with
   `.file`/`.record_id`/`.field`), `.gitattributes` pins content to LF
-  (zero repo churn — verified by empty diff). Next: 2a — read-only
-  viewer + schema table.
+  (zero repo churn — verified by empty diff). **2a is done**: the
+  read-only viewer (`python editor.py [dir]`) renders all seven files
+  from the `content.py` SCHEMA (`order_sensitive` + ref/dyn_ref
+  types), problems click through to records, the fixtures directory
+  is flagged, schema drift is pinned by mutation loops in test_smoke,
+  and editor.py holds no write code (grep-verified). Next: 2b —
+  headless write layer (D9 Save-All, D11 stale guard, D10 canonical
+  form, `test_content_write.py`). The user wants to nitpick viewer
+  UX before forms build on it.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
