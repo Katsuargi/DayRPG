@@ -2,7 +2,7 @@
   {
     "id": "gather_food",
     "label": "Gather Food",
-    "behavior": "gather_food",
+    "behavior": "gather_item",
     "skill": "foraging",
     "checks": [
       [
@@ -14,12 +14,21 @@
         "strength"
       ]
     ],
-    "stat_xp": null
+    "stat_xp": null,
+    "gather": {
+      "item": "berries",
+      "yield": [
+        2,
+        4
+      ],
+      "success": "you foraged the nearby bushes ({amount} berries).",
+      "fail": "you searched the bushes, but found nothing ripe."
+    }
   },
   {
     "id": "gather_wood",
     "label": "Gather Wood",
-    "behavior": "gather_wood",
+    "behavior": "gather_item",
     "skill": "woodcutting",
     "checks": [
       [
@@ -31,7 +40,20 @@
         "strength"
       ]
     ],
-    "stat_xp": null
+    "stat_xp": null,
+    "gather": {
+      "item": "wood",
+      "yield": [
+        1,
+        3
+      ],
+      "tool_bonus": [
+        "wood_axe",
+        1
+      ],
+      "success": "you chopped wood at the forest edge ({amount} wood).",
+      "fail": "you hacked at the trees, but brought back no wood."
+    }
   },
   {
     "id": "rest",

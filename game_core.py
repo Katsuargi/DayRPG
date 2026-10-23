@@ -19,6 +19,7 @@ from content import (
     BALANCE_KEYS,
     BEHAVIOR_HANDLERS,
     Content,
+    GATHER_ITEM,
     load_content,
     validate_bundle,
 )
@@ -76,6 +77,15 @@ BUILD_CRAFT = "build_craft"
 #: behavior name means implementing GameEngine._apply_<name>.
 ACTION_BEHAVIOR: Dict[str, str] = {
     entry["id"]: entry["behavior"] for entry in CONTENT.actions
+}
+
+#: Per-action gather config (item, yield range, messages, optional tool
+#: bonus/difficulty) from each gather_item action's "gather" block —
+#: strict load guarantees the block is valid, so a new gather kind is
+#: pure content (no handler code).
+ACTION_GATHER: Dict[str, dict] = {
+    entry["id"]: entry["gather"] for entry in CONTENT.actions
+    if entry["behavior"] == GATHER_ITEM
 }
 
 #: Attributes consulted by an event check for each action as (kind, key)
@@ -206,14 +216,10 @@ LEAN_TO_RECOVERY_BONUS = CONTENT.balance["LEAN_TO_RECOVERY_BONUS"]
 
 # --- Balance: costs, yields, recovery (content/balance.json) ---------------
 
-#: Gather attempts (food & wood) — effort spent even on failure.
+#: Gather attempts — effort spent even on failure. Per-kind yields,
+#: tool bonuses, and difficulty live in each action's gather block.
 GATHER_ENERGY_COST = CONTENT.balance["GATHER_ENERGY_COST"]
 GATHER_HUNGER_COST = CONTENT.balance["GATHER_HUNGER_COST"]
-FOOD_MIN = CONTENT.balance["FOOD_MIN"]
-FOOD_MAX = CONTENT.balance["FOOD_MAX"]
-WOOD_MIN = CONTENT.balance["WOOD_MIN"]
-WOOD_MAX = CONTENT.balance["WOOD_MAX"]
-AXE_WOOD_BONUS = CONTENT.balance["AXE_WOOD_BONUS"]
 
 #: Resting.
 REST_FOOD_HEALTH = CONTENT.balance["REST_FOOD_HEALTH"]
@@ -872,13 +878,20 @@ class GameEngine:
                 f"action {action_id!r}: build_craft dispatches in run_slot, "
                 "not _apply_action"
             )
-        return getattr(self, f"_apply_{behavior}")()
+        return getattr(self, f"_apply_{behavior}")(action_id)
 
-    def _skill_check(self, skill_key: str) -> bool:
-        """Roll d20 + skill level against ACTION_DIFFICULTY."""
+    def _skill_check(self, skill_key: str,
+                     difficulty: int | None = None) -> bool:
+        """Roll d20 + skill level against a DC.
+
+        `difficulty` overrides ACTION_DIFFICULTY per call (a gather
+        block's optional "difficulty"); tests still force the class
+        default via the instance attribute when content sets none.
+        """
         skill = self.skills[skill_key]
         die = self.rng.randint(1, CHECK_DIE)
-        return die + skill.level >= self.ACTION_DIFFICULTY
+        dc = self.ACTION_DIFFICULTY if difficulty is None else difficulty
+        return die + skill.level >= dc
 
     def _recovery(self, amount: int) -> int:
         """Scale a recovery gain; the Lean to adds 10%, rounded down."""
@@ -886,26 +899,30 @@ class GameEngine:
             return int(amount * (1 + LEAN_TO_RECOVERY_BONUS))
         return amount
 
-    def _apply_gather_food(self) -> Tuple[bool, str]:
+    def _apply_gather_item(self, action_id: str) -> Tuple[bool, str]:
+        """Generic gather: effort cost, skill check, yield on success.
+
+        Everything kind-specific comes from the action's gather block
+        (item, yield range, messages, optional tool bonus/difficulty).
+        Draw order is the seeded contract: costs before any draw, one
+        skill-check draw, one yield draw only on success, tool bonus
+        after the yield with no draw.
+        """
+        cfg = ACTION_GATHER[action_id]
         # The effort is spent whether or not anything is found.
         self.energy = clamp(self.energy - GATHER_ENERGY_COST)
         self.hunger = clamp(self.hunger + GATHER_HUNGER_COST)
-        if self._skill_check("foraging"):
-            amount = self.rng.randint(FOOD_MIN, FOOD_MAX)
-            self.inventory[FOOD_ITEM] += amount
-            return True, f"you foraged the nearby bushes ({amount} berries)."
-        return False, "you searched the bushes, but found nothing ripe."
-
-    def _apply_gather_wood(self) -> Tuple[bool, str]:
-        self.energy = clamp(self.energy - GATHER_ENERGY_COST)
-        self.hunger = clamp(self.hunger + GATHER_HUNGER_COST)
-        if self._skill_check("woodcutting"):
-            amount = self.rng.randint(WOOD_MIN, WOOD_MAX)
+        skill = ACTION_SKILL[action_id]
+        if self._skill_check(skill, cfg.get("difficulty")):
+            low, high = cfg["yield"]
+            amount = self.rng.randint(low, high)
             # Tool bonuses apply once, no matter how many copies exist.
-            amount += AXE_WOOD_BONUS if self.tools.get("wood_axe") else 0
-            self.inventory[WOOD_ITEM] += amount
-            return True, f"you chopped wood at the forest edge ({amount} wood)."
-        return False, "you hacked at the trees, but brought back no wood."
+            tool_bonus = cfg.get("tool_bonus")
+            if tool_bonus and self.tools.get(tool_bonus[0]):
+                amount += tool_bonus[1]
+            self.inventory[cfg["item"]] += amount
+            return True, cfg["success"].format(amount=amount)
+        return False, cfg["fail"]
 
     def _apply_build_craft(self, action_id: str, pattern_id: str,
                            extra_changes: List[Change],
@@ -989,7 +1006,7 @@ class GameEngine:
             found.append(pattern)
         return found
 
-    def _apply_rest(self) -> Tuple[bool, str]:
+    def _apply_rest(self, _action_id: str) -> Tuple[bool, str]:
         """Rest never fails; returns (True, note) for the behavior dispatch."""
         if self.inventory[FOOD_ITEM] > 0:
             self.inventory[FOOD_ITEM] -= 1

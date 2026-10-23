@@ -16,18 +16,29 @@ strictly at import (no fallback: a bad file raises
 a dialog). Tooltips moved into the data records. Tests pin engine
 behavior to `tests/fixtures/content/` via `DAY_SCHEDULER_CONTENT_DIR`.
 
-**Phase 1 (behavior dispatch):** every action carries a `behavior`
-field (keys of `content.py` `BEHAVIOR_HANDLERS`); `game_core` derives
-`ACTION_BEHAVIOR` and dispatches on it — `_apply_action` resolves
-`_apply_<behavior>` directly (no id ladder), `run_slot` routes
-`build_craft` (a `BUILD_CRAFT` constant) through the pattern picker,
-and `_apply_rest` now returns `(True, note)` like every handler.
-`HANDLED_ACTIONS` was deleted — obsolete once dispatch is
-behavior-keyed; the validation chain is behavior ∈ BEHAVIOR_HANDLERS
-(content.py) ∧ every vocabulary name has `_apply_<name>` (game_core).
-RNG order untouched (handler bodies unchanged); seeded outputs are
-byte-identical to pre-Phase-1. No save-format change: the planner
-still stores action ids.
+**Phase 1 (behavior dispatch + generic gather) is complete.** Every
+action carries a `behavior` field (keys of `content.py`
+`BEHAVIOR_HANDLERS`); `game_core` derives `ACTION_BEHAVIOR` and
+dispatches on it — `_apply_action` resolves `_apply_<behavior>`
+directly (no id ladder), `run_slot` routes `build_craft` (a
+`BUILD_CRAFT` constant) through the pattern picker, and `_apply_rest`
+now returns `(True, note)` like every handler. `HANDLED_ACTIONS` was
+deleted — obsolete once dispatch is behavior-keyed.
+
+Gather is fully parameterized: the `gather_food`/`gather_wood`
+behaviors collapsed into one `gather_item` behavior whose handler
+(`_apply_gather_item`) reads a per-action `gather` block (item, yield
+[min,max], success/fail messages with `{amount}`, optional
+`tool_bonus` [tool id, flat] and `difficulty` override). The five
+gather balance keys (`FOOD_*`, `WOOD_*`, `AXE_WOOD_BONUS`) moved into
+those blocks; shared costs stay in balance.json. **A new gather kind
+(Gather Metal) is now pure content** — new item + skill + action
+record, zero Python — proven both success and fail paths. Validation
+(`_check_gather`) pins every field, cross-refs items and tool
+patterns, and rejects malformed `{amount}` templates. RNG order
+untouched (costs → one skill check → one yield-on-success → bonus);
+seeded outputs byte-identical. No save-format change: the planner
+still stores action ids (event `actions` lists still name those ids).
 
 **0b (slug item ids):** item ids are lowercase slugs (`berries`,
 `wood`, `herbs`, `stone`); pattern `materials` keys likewise. Player

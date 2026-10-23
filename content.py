@@ -41,11 +41,14 @@ CONTENT_FILES: Tuple[str, ...] = (
 #: the shared vocabulary the content editor's dropdown reads (it must
 #: never import game_core).
 BEHAVIOR_HANDLERS: Dict[str, str] = {
-    "gather_food": "Effort cost, skill check, yields a food item.",
-    "gather_wood": "Effort cost, skill check, yields wood.",
+    "gather_item": "Effort cost, skill check, yields a configured item.",
     "rest": "Recovery action; eats food if available.",
     "build_craft": "Pattern attempt: spends materials, skill check, progress.",
 }
+
+#: Behavior whose actions carry a `gather` block (item, yield range,
+#: messages, optional tool bonus / difficulty) — validated by _check_gather.
+GATHER_ITEM: str = "gather_item"
 
 #: Exact key set balance.json must carry — a missing key would crash the
 #: game at import, an unknown key is a typo silently ignored. Both fail
@@ -57,7 +60,6 @@ BALANCE_KEYS: Tuple[str, ...] = (
     "EVENT_XP_SUCCESS", "EVENT_XP_FAILURE", "EVENT_FAILURE_HEALTH",
     "EVENT_CHANCE", "LEAN_TO_RECOVERY_BONUS",
     "GATHER_ENERGY_COST", "GATHER_HUNGER_COST",
-    "FOOD_MIN", "FOOD_MAX", "WOOD_MIN", "WOOD_MAX", "AXE_WOOD_BONUS",
     "REST_FOOD_HEALTH", "REST_FOOD_ENERGY", "REST_FOOD_HUNGER_NET",
     "REST_EMPTY_HEALTH", "REST_EMPTY_ENERGY", "REST_EMPTY_HUNGER",
     "SLEEP_HUNGER_NIGHT", "SLEEP_FOOD_HEALTH", "SLEEP_FOOD_ENERGY",
@@ -157,6 +159,78 @@ def _check_items(items: Any, problems: List[str]) -> Set[str]:
     return ids
 
 
+def _check_gather(
+    where: str, gather: Any, item_ids: Set[str], tool_ids: Set[str],
+    problems: List[str],
+) -> None:
+    """The `gather` block of a gather_item action.
+
+    Required: item (existing id), yield [min, max] (1 <= min <= max —
+    randint would crash otherwise), non-empty success/fail messages.
+    Optional: tool_bonus [tool pattern id, flat bonus >= 1], difficulty
+    (DC override; the engine default is balance.json ACTION_DIFFICULTY).
+    """
+    gwhere = f"{where}: 'gather'"
+    if not isinstance(gather, dict):
+        problems.append(
+            f"{gwhere} must be an object (item, yield, success, fail)"
+        )
+        return
+    known = {"item", "yield", "success", "fail", "tool_bonus", "difficulty"}
+    for key in gather:
+        if key not in known:
+            problems.append(f"{gwhere}: unknown key {key!r} (typo?)")
+    item = gather.get("item")
+    if not isinstance(item, str) or item not in item_ids:
+        problems.append(f"{gwhere}: 'item' must be an existing item id")
+    span = gather.get("yield")
+    if (
+        not isinstance(span, (list, tuple))
+        or len(span) != 2
+        or not all(
+            isinstance(v, int) and not isinstance(v, bool) for v in span
+        )
+        or span[0] < 1
+        or span[0] > span[1]
+    ):
+        problems.append(
+            f"{gwhere}: 'yield' must be [min, max] integers with "
+            "1 <= min <= max"
+        )
+    for key in ("success", "fail"):
+        if not isinstance(gather.get(key), str) or not gather[key]:
+            problems.append(f"{gwhere}: '{key}' must be a non-empty string")
+    success = gather.get("success")
+    if isinstance(success, str) and success:
+        try:
+            success.format(amount=0)
+        except (KeyError, IndexError, ValueError) as exc:
+            problems.append(
+                f"{gwhere}: 'success' is not a valid template ({exc})"
+            )
+    bonus = gather.get("tool_bonus")
+    if bonus is not None and (
+        not isinstance(bonus, (list, tuple))
+        or len(bonus) != 2
+        or not isinstance(bonus[0], str)
+        or bonus[0] not in tool_ids
+        or not isinstance(bonus[1], int)
+        or isinstance(bonus[1], bool)
+        or bonus[1] < 1
+    ):
+        problems.append(
+            f"{gwhere}: 'tool_bonus' must be [tool pattern id, "
+            "integer >= 1]"
+        )
+    difficulty = gather.get("difficulty")
+    if difficulty is not None and (
+        not isinstance(difficulty, int)
+        or isinstance(difficulty, bool)
+        or difficulty < 1
+    ):
+        problems.append(f"{gwhere}: 'difficulty' must be an integer >= 1")
+
+
 def _check_level_table(
     records: Any, filename: str, problems: List[str]
 ) -> Set[str]:
@@ -186,7 +260,8 @@ def _check_level_table(
 
 
 def _check_actions(
-    actions: Any, skill_ids: Set[str], stat_ids: Set[str], problems: List[str]
+    actions: Any, skill_ids: Set[str], stat_ids: Set[str],
+    item_ids: Set[str], tool_ids: Set[str], problems: List[str],
 ) -> Set[str]:
     ids: Set[str] = set()
     if not isinstance(actions, list):
@@ -213,9 +288,21 @@ def _check_actions(
                 f"{where}: 'behavior' must be one of "
                 f"{tuple(BEHAVIOR_HANDLERS)}"
             )
+        behavior = rec.get("behavior")
+        gather = rec.get("gather")
+        if behavior == GATHER_ITEM:
+            _check_gather(where, gather, item_ids, tool_ids, problems)
+        elif gather is not None:
+            problems.append(
+                f"{where}: 'gather' only applies to gather_item behaviors"
+            )
         skill = rec.get("skill")
         if skill is not None and skill not in skill_ids:
             problems.append(f"{where}: unknown skill {skill!r}")
+        elif behavior == GATHER_ITEM and skill not in skill_ids:
+            problems.append(
+                f"{where}: gather_item actions need a valid 'skill' to check"
+            )
         if not isinstance(rec.get("checks"), list):
             problems.append(f"{where}: 'checks' must be a JSON array")
         else:
@@ -356,8 +443,7 @@ def _check_balance(balance: Any, problems: List[str]) -> None:
     # Crash-level sanity only; placeholder balance stays freely tunable.
     ranged = {
         key: balance[key]
-        for key in ("MAX_VITAL", "XP_TO_NEXT", "XP_COST_STEP", "CHECK_DIE",
-                    "FOOD_MIN", "FOOD_MAX", "WOOD_MIN", "WOOD_MAX")
+        for key in ("MAX_VITAL", "XP_TO_NEXT", "XP_COST_STEP", "CHECK_DIE")
         if key in balance and _is_number(balance[key])
     }
     if ranged.get("MAX_VITAL", 1) < 1:
@@ -370,16 +456,6 @@ def _check_balance(balance: Any, problems: List[str]) -> None:
         problems.append(
             "balance.json: 'CHECK_DIE' must be >= 1 (randint would crash)"
         )
-    if "FOOD_MIN" in ranged and "FOOD_MAX" in ranged:
-        if ranged["FOOD_MIN"] > ranged["FOOD_MAX"]:
-            problems.append(
-                "balance.json: FOOD_MIN must be <= FOOD_MAX (randint crash)"
-            )
-    if "WOOD_MIN" in ranged and "WOOD_MAX" in ranged:
-        if ranged["WOOD_MIN"] > ranged["WOOD_MAX"]:
-            problems.append(
-                "balance.json: WOOD_MIN must be <= WOOD_MAX (randint crash)"
-            )
     chance = balance.get("EVENT_CHANCE")
     if _is_number(chance) and not 0 <= chance <= 1:
         problems.append("balance.json: 'EVENT_CHANCE' must be between 0 and 1")
@@ -396,7 +472,14 @@ def validate_bundle(content: Content) -> List[str]:
     item_ids = _check_items(content.items, problems)
     skill_ids = _check_level_table(content.skills, "skills", problems)
     stat_ids = _check_level_table(content.stats, "stats", problems)
-    action_ids = _check_actions(content.actions, skill_ids, stat_ids, problems)
+    # Tools are craft-kind patterns; gather tool_bonuses reference them.
+    tool_ids: Set[str] = {
+        pid for pid, rec in content.patterns.items()
+        if isinstance(rec, dict) and rec.get("kind") == "craft"
+    } if isinstance(content.patterns, dict) else set()
+    action_ids = _check_actions(
+        content.actions, skill_ids, stat_ids, item_ids, tool_ids, problems
+    )
     _check_patterns(content.patterns, skill_ids, item_ids, problems)
     _check_events(content.events, action_ids, problems)
     _check_balance(content.balance, problems)

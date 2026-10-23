@@ -45,7 +45,8 @@ You'll mostly read simple code, but these differences bite:
 
 - **Indentation replaces braces.** Blocks are `4 spaces`. No `;`, no `{}`.
 - **`self` ≈ `this`.** First parameter of every class method.
-  `def _apply_rest(self):` is called as `engine._apply_rest()`.
+  `def _apply_rest(self, _action_id):` is called as
+  `engine._apply_rest("rest")`.
 - **`None` ≈ `null`.** `True`/`False` capitalized. ⚠ Truthiness is **not**
   like JS: Python treats `0`, `""`, `None`, **and empty `{}` / `[]` / `()`**
   as falsy — in JS empty objects and arrays are *truthy*. The code leans
@@ -88,10 +89,10 @@ just aren't hand-written anymore.
 | Stat/skill names, start levels, tooltips | `content/stats.json`, `content/skills.json` | `STAT_NAMES`, `SKILL_NAMES`, `GameEngine.__init__` |
 | Vitals shown in change lists | (code — vitals are engine attributes) | `STAT_LABELS` → `_snapshot` / `_diff` |
 | Action dispatch | `content/actions.json` (`behavior` field) | `ACTION_BEHAVIOR` → `_apply_<behavior>` in `_apply_action` / `run_slot` |
-| Action behavior + yields | (code — the Python handler) | `_apply_gather_food`, `_apply_rest`, `_apply_sleep` |
-| Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check` |
+| Action behavior + yields | `gather_item` params in the `gather` block of `actions.json` | `_apply_gather_item`, `_apply_rest`, `_apply_sleep` |
+| Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; a `gather` block's `difficulty` overrides it |
 | Build/craft blueprints | `content/patterns.json` | `PATTERNS` (`Pattern` dataclass) → `_apply_build_craft`, `patterns_for` |
-| Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to), axe bonus in `_apply_gather_wood` |
+| Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to), tool bonus in `_apply_gather_item` |
 | XP costs & level-ups | `balance.json` → `XP_TO_NEXT`, `XP_COST_STEP` | `xp_cost_for`, `add_xp` |
 | Death | (code) | `_check_game_over` (end of day only) |
 | Random events | `content/events.json` | `RANDOM_EVENTS` (`RandomEvent` dataclass) → `_pick_event` / `_resolve_event` |
@@ -133,8 +134,6 @@ yields, recovery" block covers the action numbers:
 | Constant | Value | What it does |
 |----------|-------|--------------|
 | `GATHER_ENERGY_COST` / `GATHER_HUNGER_COST` | 10 / 5 | Effort per gather (spent even on failure). |
-| `FOOD_MIN`/`FOOD_MAX`, `WOOD_MIN`/`WOOD_MAX` | 2–4, 1–3 | Yield ranges. |
-| `AXE_WOOD_BONUS` | 1 | Flat wood bonus while you own an axe. |
 | `REST_FOOD_HEALTH` / `REST_FOOD_ENERGY` | 15 / 25 | Rest gains when eating. |
 | `REST_EMPTY_HEALTH/ENERGY/HUNGER` | 5 / 10 / +5 | Rest on an empty stomach. |
 | `REST_FOOD_HUNGER_NET` | −10 | Net hunger while eating and resting. |
@@ -160,7 +159,9 @@ class/module values in tests; override per instance.
 ## The three check systems (how they interact)
 
 1. **Action check** — every gather and every pattern attempt rolls
-   `d20 + skill level ≥ ACTION_DIFFICULTY` (`_skill_check`). On failure:
+   `d20 + skill level ≥ ACTION_DIFFICULTY` (`_skill_check`). A `gather`
+   block's optional `difficulty` overrides the DC for that one action.
+   On failure:
    effort (and build/craft materials) is spent, no yield/progress, but
    **XP is still granted**. Rest never checks.
 2. **Event check** — when the 10% fires, `_resolve_event` sums the levels
@@ -214,10 +215,17 @@ The SKILLS panel row appears on its own; `start_level` feeds
 `GameEngine.__init__` automatically and the tooltip comes from the same
 record — there is nothing to touch in `main.py`.
 
-**3. Register the behavior** — actions dispatch on their `behavior`
-field, not their id: `_apply_action` resolves `_apply_<behavior>`
-directly, so there is no dispatch code to write. `validate_content()`
-refuses the JSON entry until both pieces exist:
+**3. Gather actions need no code at all** — an action whose `behavior`
+is `gather_item` is pure content. The engine's `_apply_gather_item`
+reads the `gather` block you wrote in step 1 (item, yield range,
+messages, optional tool bonus / difficulty) and does everything else:
+effort cost, skill check on `skill`, yield roll, tool bonus. Adding
+"Gather Metal" later is the same shape — a new item, a new skill, and a
+new `gather_item` action record — with no new handler.
+
+You only write Python for a genuinely **new behavior** — one that isn't
+a gather, rest, or pattern attempt. Then `validate_content()` refuses
+the JSON entry until it exists:
 
 1. Claim the name in `content.py`'s `BEHAVIOR_HANDLERS` (also the
    editor's dropdown vocabulary):
@@ -226,10 +234,11 @@ refuses the JSON entry until both pieces exist:
 "fish": "Effort cost, skill check, yields fish.",
 ```
 
-2. Implement it, near the other `_apply_*` methods:
+2. Implement it, near the other `_apply_*` methods — note it receives
+   the `action_id`, so a generic handler can look up per-action config:
 
 ```python
-def _apply_fish(self) -> Tuple[bool, str]:
+def _apply_fish(self, action_id: str) -> Tuple[bool, str]:
     # The effort is spent whether or not anything bites.
     self.energy = clamp(self.energy - 12)
     self.hunger = clamp(self.hunger + 5)
@@ -241,9 +250,7 @@ def _apply_fish(self) -> Tuple[bool, str]:
 ```
 
 Return `(success, note)` — returning `False` still grants XP (handled
-centrally in `run_slot`); it just means no yield. Reusing an existing
-behavior (`"behavior": "gather_food"` on a second forage action) needs
-no code at all.
+centrally in `run_slot`); it just means no yield.
 
 **4. If it yields a new item** — append to `content/items.json`:
 

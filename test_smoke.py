@@ -172,6 +172,24 @@ try:
         p.startswith("actions.json: 'gather_food'") and "behavior" in p
         for p in probs
     ), probs
+
+    # (h) broken gather block: named fields, ranges, templates, tool refs
+    shutil.copy(_FIXTURE / "actions.json", _tmp / "actions.json")
+    actions = json.loads((_tmp / "actions.json").read_text(encoding="utf-8"))
+    gather = actions[0]["gather"]
+    gather["yield"] = [5, 2]                  # min > max (randint crash)
+    gather["tool_bonus"] = ["silver_sword", 2]  # not a tool pattern
+    gather["success"] = "you dig {amount holes"  # broken template
+    (_tmp / "actions.json").write_text(
+        json.dumps(actions, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None, "parseable content must stay loadable"
+    gprefix = "actions.json: 'gather_food': 'gather'"
+    assert any(p.startswith(gprefix) for p in probs), probs
+    assert any("'yield'" in p for p in probs), probs
+    assert any("'tool_bonus'" in p for p in probs), probs
+    assert any("'success'" in p and "template" in p for p in probs), probs
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")
