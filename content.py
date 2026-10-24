@@ -86,10 +86,14 @@ CHECK_KINDS: Tuple[str, ...] = ("stats", "skills")
 #:
 #: order_sensitive: file order is meaningful data (planner order, event
 #: draw order, golden tuples) — the editor must never sort these files.
+#: layout (2d, D14): how the editor mounts Edit — "inline" (form inside
+#: the record block) or "pane" (single-record detail pane); browsing is
+#: always the stacked read-only viewer.
 SCHEMA: Dict[str, dict] = {
     "items": {
         "kind": "array",
         "order_sensitive": True,
+        "layout": "inline",
         "fields": {
             "id": "slug",
             "name": "string",
@@ -101,6 +105,7 @@ SCHEMA: Dict[str, dict] = {
     "skills": {
         "kind": "dict",
         "order_sensitive": True,
+        "layout": "inline",
         "fields": {
             "name": "string",
             "start_level": "int",
@@ -110,6 +115,7 @@ SCHEMA: Dict[str, dict] = {
     "stats": {
         "kind": "dict",
         "order_sensitive": True,
+        "layout": "inline",
         "fields": {
             "name": "string",
             "start_level": "int",
@@ -119,6 +125,7 @@ SCHEMA: Dict[str, dict] = {
     "actions": {
         "kind": "array",
         "order_sensitive": True,
+        "layout": "pane",
         "fields": {
             "id": "slug",
             "label": "string",
@@ -143,6 +150,7 @@ SCHEMA: Dict[str, dict] = {
     "patterns": {
         "kind": "dict",
         "order_sensitive": True,
+        "layout": "pane",
         "fields": {
             "name": "string",
             "kind": ("enum", PATTERN_KINDS),
@@ -158,6 +166,7 @@ SCHEMA: Dict[str, dict] = {
     "events": {
         "kind": "dict",
         "order_sensitive": True,
+        "layout": "inline",
         "fields": {
             "text": "string",
             "actions": ("list", ("ref", "actions")),
@@ -168,6 +177,7 @@ SCHEMA: Dict[str, dict] = {
     "balance": {
         "kind": "flat",
         "order_sensitive": False,
+        "layout": "inline",
         "fields": {key: "number" for key in BALANCE_KEYS},
     },
 }

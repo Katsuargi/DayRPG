@@ -76,6 +76,43 @@ a directory argument and runs off the UI thread).
 - **bool/int:** all 9 numeric validator sites already exclude bools
   (verified); `type(x) is int` binds new schema + form code.
 
+### 2d design decisions (round 4 — user-approved after second-opinion review)
+
+- **D14 — Layout per file.** `SCHEMA[file]["layout"]` = `"inline"` |
+  `"pane"`. Inline: items, skills, stats, balance, events (deliberate
+  exception — its only nested piece is a short ref list, so the rule's
+  purpose, "scrolling hides the fields you're editing", cannot trigger
+  there). Pane: actions (checks + gather, genuinely tall), patterns
+  (materials grows with every item). Browsing stays the stacked
+  read-only viewer for every file; the flag switches only the Edit
+  mount. Pane v1 = one record at a time (header + Done + form + ref
+  rows), NO in-pane record selection — navigation stays the proven
+  browse/Edit toggle.
+- **D15 — Unsaved-work navigation: visibility, not prompts.** Forms
+  write through to the bundle every keystroke (that is why file
+  switches never prompt) — the bundle IS the draft, so selection
+  changes lose nothing. Rule: no prompt, no per-record drafts, no
+  blocking; instead a per-record ● indicator (session set fed by form
+  edits, cleared on save/reload) on block and pane headers. Guard
+  scope unchanged (Reload/close). Recorded fallback: if pane
+  navigation ever feels loose, reuse `_confirm_discard` on selection.
+- **D16 — Nested editors are sub-components of RecordForm.** `nested`
+  → labeled group + recurse the same dispatcher (gather); `list` →
+  rows (member widget per `spec[1]`, e.g. checks = [enum combo,
+  dyn_ref combo]) with add/remove/↑↓; `dict_int` → (ref combo, int)
+  rows with add/remove ONLY — no reorder, so materials key order is
+  written back unchanged (constraint 4). dyn_ref options filter by the
+  row's sibling field; nullable fields gain a "(none)" option stored
+  as null. Ref options resolve from the in-memory bundle (D12). New
+  form handle: `form.rowvars[field] -> list[list[Variable]]`.
+- **D17 — Tests against the form model.** Assertions drive
+  `form.vars`/`rowvars`, `bundle`, `dirty`, `problems`, and recorded
+  dialogs; widgets are asserted only for existence/invariants (e.g.
+  zero input widgets before Edit), never for value flow — layout
+  changes must not be able to break tests. 2d acceptance per file
+  (six files): one edit→save→reload + one blocked-bad-edit,
+  model-first.
+
 ## Goal
 
 A tkinter content editor for `content/*.json`: browse, edit, validate,

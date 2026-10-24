@@ -58,6 +58,10 @@ class ContentViewer:
         self._reorder_warned: set[str] = set()
         self._forms: dict[tuple[str, str], "RecordForm"] = {}
         self._current_idx = 0
+        # 2d state: the single pane-mounted edit (D14, None while
+        # browsing) and the per-record ● set (D15, session-scoped)
+        self._pane_edit: tuple[str, str] | None = None
+        self._record_dirty: set[tuple[str, str]] = set()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_widgets()
         self.reload()
@@ -363,6 +367,8 @@ class ContentViewer:
         self._unsaved_ids.clear()
         self._reorder_warned.clear()
         self._forms.clear()
+        self._pane_edit = None
+        self._record_dirty.clear()
         self._rebuild()
 
     def _records_of(self, fname: str) -> list[tuple[str, dict]]:
@@ -451,6 +457,16 @@ class ContentViewer:
         """Select the file, re-render, flash + scroll to the record — the
         shared click-through for problem rows and reference links."""
         if fname in CONTENT_FILES:
+            # a jump is browse intent (D14): unmount a pane edit that
+            # would mask the target; a pane edit on another file, or on
+            # THE target itself, survives
+            if (self._pane_edit is not None
+                    and self._pane_edit[0] == fname
+                    and self._pane_edit != (fname, record_id)):
+                old = self._pane_edit
+                self._pane_edit = None
+                self._editing.discard(old)
+                self._forms.pop(old, None)
             idx = list(CONTENT_FILES).index(fname)
             self.file_list.selection_clear(0, "end")
             self.file_list.selection_set(idx)
@@ -506,9 +522,21 @@ class ContentViewer:
         if key in self._editing:
             self._editing.discard(key)
             self._forms.pop(key, None)
+            if self._pane_edit == key:
+                self._pane_edit = None      # Done → back to browsing
         else:
             self._editing.add(key)
+            if SCHEMA[fname].get("layout") == "pane":
+                self._enter_pane(key)
         self._render_file(self._current_idx)
+
+    def _enter_pane(self, key: tuple[str, str]) -> None:
+        """D14: mount this record as THE pane edit (one at a time)."""
+        if self._pane_edit is not None and self._pane_edit != key:
+            old = self._pane_edit
+            self._editing.discard(old)
+            self._forms.pop(old, None)
+        self._pane_edit = key
 
     def _next_id(self, fname: str, base: str) -> str:
         existing = {rid for rid, _ in self._records_of(fname)}
@@ -558,6 +586,8 @@ class ContentViewer:
             self._default_record(fname, rec_id))
         self._unsaved_ids.add((fname, rec_id))
         self._editing.add((fname, rec_id))  # a new record opens for edit
+        if SCHEMA[fname].get("layout") == "pane":
+            self._enter_pane((fname, rec_id))
         self._mark_dirty(fname)
         self._render_file(self._current_idx)
 
@@ -627,6 +657,9 @@ class ContentViewer:
         self._unsaved_ids.discard((fname, rec_id))
         self._editing.discard((fname, rec_id))
         self._forms.pop((fname, rec_id), None)
+        self._record_dirty.discard((fname, rec_id))
+        if self._pane_edit == (fname, rec_id):
+            self._pane_edit = None  # a deleted record can't stay mounted
         self._mark_dirty(fname)
         self._render_file(self._current_idx)
 
@@ -669,6 +702,8 @@ class ContentViewer:
             return False
         for fname in result.written:
             self.dirty.discard(fname)
+            self._record_dirty = {k for k in self._record_dirty
+                                  if k[0] != fname}
             for key in [k for k in self._unsaved_ids if k[0] == fname]:
                 self._unsaved_ids.discard(key)  # on disk: D7 locks it
         # the write moved disk under us — refresh D9 baseline + D11 hashes
@@ -735,6 +770,10 @@ class ContentViewer:
                           "(see Problems; fix in an external editor)"
                      ).pack(fill="x", padx=12)
             return
+        if self._pane_edit is not None and self._pane_edit[0] == fname:
+            self._render_pane_edit(fname)
+            self._bind_scroll(self.records_frame)
+            return
         if SCHEMA[fname].get("kind") == "array":
             tk.Button(self.records_frame, text="+ add record",
                       command=lambda f=fname: self._on_add(f)).pack(
@@ -745,9 +784,45 @@ class ContentViewer:
         # wheel "break" guard) onto every widget just created
         self._bind_scroll(self.records_frame)
 
+    def _header_text(self, fname: str, rec_id: str) -> str:
+        """D15: the record's header line, with the session ● marker."""
+        mark = "● " if (fname, rec_id) in self._record_dirty else ""
+        return f"  {mark}{rec_id}"
+
+    def _touch_record(self, fname: str, rec_id: str) -> None:
+        """Mark one record edited and update its header IN PLACE —
+        labels never hold focus, so this is keystroke-safe (the
+        panels-only refresh rule is preserved)."""
+        self._record_dirty.add((fname, rec_id))
+        header = self._blocks.get((fname, rec_id))
+        if header is not None:
+            header.configure(text=self._header_text(fname, rec_id))
+
+    def _render_pane_edit(self, fname: str) -> None:
+        """D14 pane mount: exactly one record — add button, Done/ops,
+        ref rows, form. No in-pane selection; Done returns to browsing."""
+        rec_id = self._pane_edit[1]
+        rec = next((r for rid, r in self._records_of(fname)
+                    if rid == rec_id), None)
+        if rec is None:  # vanished under us — fall back to browsing
+            self._pane_edit = None
+            self._editing.discard((fname, rec_id))
+            self._forms.pop((fname, rec_id), None)
+            self._render_file(self._current_idx)
+            return
+        tk.Label(self.records_frame, anchor="w", fg=MUTED_FG,
+                 text="editing one record — Done returns to browsing"
+                 ).pack(fill="x", padx=4)
+        if SCHEMA[fname].get("kind") == "array":
+            tk.Button(self.records_frame, text="+ add record",
+                      command=lambda f=fname: self._on_add(f)).pack(
+                anchor="e", padx=8, pady=(0, 2))
+        self._render_record(fname, rec_id, rec)
+
     def _render_record(self, fname: str, rec_id: str, rec) -> None:
         header = tk.Label(self.records_frame, anchor="w", bg="#e8e8f0",
-                          font=(None, 9, "bold"), text=f"  {rec_id}")
+                          font=(None, 9, "bold"),
+                          text=self._header_text(fname, rec_id))
         header.pack(fill="x", padx=4, pady=(6, 1))
         self._blocks[(fname, rec_id)] = header
         if self.bundle is not None and isinstance(rec, dict):
@@ -859,6 +934,11 @@ class RecordForm:
         self.rec_id = rec_id
         self.record = record
         self.vars: dict[str, tk.Variable] = {}
+        self.rowvars: dict[str, list[list[tk.Variable]]] = {}
+        self.groups: dict[str, "RecordForm"] = {}
+        # an absent nested block goes live on its first edit, so merely
+        # opening a form never mutates the bundle
+        self._attach: tuple[dict, str] | None = None
         editable_id = (fname, rec_id) in viewer._unsaved_ids  # D7
         for field, fspec in spec.items():
             self._add_field(parent, field, fspec, record.get(field),
@@ -866,10 +946,11 @@ class RecordForm:
 
     def _add_field(self, parent, field, fspec, value, present, *,
                    editable_id=False) -> None:
-        was_opt = False
+        was_opt = was_nullable = False
         spec = fspec
         while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
             was_opt = was_opt or spec[0] == "opt"
+            was_nullable = was_nullable or spec[0] == "nullable"
             spec = spec[1]
         row = tk.Frame(parent)
         row.pack(fill="x", padx=8)
@@ -884,16 +965,27 @@ class RecordForm:
                                  readonly=(field == "id"))
             return
         if isinstance(spec, tuple) and spec[0] == "enum":
-            self._add_combo(row, field, list(spec[1]), value)
+            self._add_combo(row, field, list(spec[1]), value,
+                            nullable=was_nullable)
             return
         if isinstance(spec, tuple) and spec[0] == "ref":
-            self._add_combo(row, field, self._ref_ids(spec[1]), value)
+            self._add_combo(row, field, self._ref_ids(spec[1]), value,
+                            nullable=was_nullable)
             return
         if isinstance(spec, tuple) and spec[0] == "pair":
             self._add_pair(row, field, spec, value, was_opt)
             return
-        # nested / list / dyn_ref / dict_int: shown read-only until their
-        # 2d editors land — never silently hidden
+        if isinstance(spec, tuple) and spec[0] == "nested":
+            self._add_nested(row, field, spec, value, was_opt, present)
+            return
+        if isinstance(spec, tuple) and spec[0] == "list":
+            self._add_list(row, field, spec, value, was_opt)
+            return
+        if isinstance(spec, tuple) and spec[0] == "dict_int":
+            self._add_dict_int(row, field, spec, value, was_opt)
+            return
+        # dyn_ref never stands alone in shipped schemas (only inside
+        # pairs/lists): shown read-only rather than hidden — total first
         if not present:
             text = "— absent"
         elif value is None:
@@ -902,7 +994,7 @@ class RecordForm:
             text = self.viewer._value_text(fspec, value, self.fname)
         tk.Label(row, anchor="w", text=text).pack(side="left")
         tk.Label(row, anchor="w", fg=MUTED_FG,
-                 text="  (not editable yet — 2d)").pack(side="left")
+                 text="  (no editor for this spec)").pack(side="left")
 
     def _add_scalar(self, row, field, kind, value, was_opt, *,
                     readonly=False) -> None:
@@ -948,49 +1040,52 @@ class RecordForm:
             viewer._editing.add(new_key)
         if old_key in viewer._forms:
             viewer._forms[new_key] = viewer._forms.pop(old_key)
+        viewer._record_dirty.discard(old_key)  # _changed re-marks new key
         self._changed()
 
-    def _add_combo(self, row, field, values, value) -> None:
-        var = tk.StringVar(value="" if value is None else str(value))
-        ttk.Combobox(row, textvariable=var, values=values, width=50,
-                     state="readonly").pack(side="left", fill="x",
-                                            expand=True)
+    def _add_combo(self, row, field, values, value, *,
+                   nullable=False) -> None:
+        """Enum/ref dropdown (D12: options from the in-memory bundle).
+        nullable adds a "(none)" option stored as null — the stat-tied
+        actions' `skill: null` case (D16)."""
+        none_opt = ["(none)"] if nullable else []
+        shown = ("(none)" if nullable and value is None
+                 else "" if value is None else str(value))
+        var = tk.StringVar(value=shown)
+        ttk.Combobox(row, textvariable=var, values=none_opt + values,
+                     width=50, state="readonly").pack(
+            side="left", fill="x", expand=True)
         self.vars[field] = var
 
-        def on_change(*_a, _f=field):
-            self.record[_f] = var.get()
+        def on_change(*_a, _f=field, _n=none_opt):
+            raw = var.get()
+            self.record[_f] = None if _n and raw == "(none)" else raw
             self._changed()
         var.trace_add("write", on_change)
 
     def _add_pair(self, row, field, spec, value, was_opt) -> None:
+        """D16: a pair is two member widgets sharing a row (tool_bonus,
+        difficulty_target, stat_xp). The right member's dyn_ref options
+        track the left member — pair(rowvars) doubles as the model
+        handle: rowvars[field] == [[left, right]] (D17)."""
         left_spec, right_spec = spec[1], spec[2]
-        while isinstance(right_spec, tuple) and right_spec[0] in (
-                "opt", "nullable"):
-            right_spec = right_spec[1]
-        rkind = right_spec if isinstance(right_spec, str) else "string"
         seq = (value if isinstance(value, (list, tuple)) and len(value) == 2
                else (None, None))
         var_l = tk.StringVar(value="" if seq[0] is None else str(seq[0]))
         var_r = tk.StringVar(value="" if seq[1] is None else str(seq[1]))
-        sub = left_spec
-        while isinstance(sub, tuple) and sub[0] in ("opt", "nullable"):
-            sub = sub[1]
-        if isinstance(sub, tuple) and sub[0] == "ref":
-            ttk.Combobox(row, textvariable=var_l, state="readonly",
-                         values=self._ref_ids(sub[1]), width=32).pack(
-                side="left")
-        else:
-            tk.Entry(row, textvariable=var_l, width=24).pack(side="left")
+        self.rowvars[field] = [[var_l, var_r]]
+        self._member(row, left_spec, var_l)
         tk.Label(row, text="·").pack(side="left", padx=3)
-        tk.Entry(row, textvariable=var_r, width=7).pack(side="left")
+        self._member(row, right_spec, var_r, sibling=var_l)
 
-        def on_change(*_a, _f=field, _l=var_l, _r=var_r, _k=rkind,
-                      _o=was_opt):
-            left, right = _l.get(), _r.get()
+        def on_change(*_a, _f=field, _l=var_l, _r=var_r, _o=was_opt,
+                      _ls=left_spec, _rs=right_spec):
+            left = self._coerce_member(_ls, _l.get())
+            right = self._coerce_member(_rs, _r.get())
             if _o and left == "" and right == "":
                 self.record.pop(_f, None)  # cleared optional pair
             else:
-                self.record[_f] = [left, self._coerce(_k, right)]
+                self.record[_f] = [left, right]
             self._changed()
         var_l.trace_add("write", on_change)
         var_r.trace_add("write", on_change)
@@ -1027,9 +1122,276 @@ class RecordForm:
         return [str(rid) for rid, _ in self.viewer._records_of(target)]
 
     def _changed(self) -> None:
+        if self._attach is not None:
+            target, key = self._attach
+            if key not in target:
+                target[key] = self.record  # absent nested block goes live
+            self._attach = None
         self.viewer.dirty.add(self.fname)
+        self.viewer._touch_record(self.fname, self.rec_id)  # D15 ●
         self.viewer.problems = list(validate_bundle(self.viewer.bundle))
         self.viewer._refresh_lists()
+
+    def _add_nested(self, row, field, spec, value, was_opt,
+                    present) -> None:
+        """D16: a nested block is a labeled group driven by a CHILD
+        RecordForm over the same machinery (gather lands here)."""
+        block = value if isinstance(value, dict) else {}
+        group = tk.LabelFrame(row, text=f" {field} ", padx=4, pady=4)
+        group.pack(side="left", fill="x", expand=True)
+        child = RecordForm(self.viewer, group, self.fname, self.rec_id,
+                           block, spec[1])
+        if not present:
+            child._attach = (self.record, field)
+        self.groups[field] = child
+
+    def _member(self, parent, mspec, var, sibling=None) -> None:
+        """One member widget of a pair or list row (D16): scalar →
+        entry, enum/ref → bundle dropdown (D12), dyn_ref → dropdown
+        filtered by the row's `sibling` kind field (checks pattern)."""
+        spec = mspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
+        if isinstance(spec, str) and spec in ("slug", "string", "int",
+                                              "bool", "number"):
+            tk.Entry(parent, textvariable=var,
+                     width=8 if spec in ("int", "number") else 22).pack(
+                side="left")
+            return
+        if isinstance(spec, tuple) and spec[0] == "enum":
+            ttk.Combobox(parent, textvariable=var, values=list(spec[1]),
+                         width=16, state="readonly").pack(side="left")
+            return
+        if isinstance(spec, tuple) and spec[0] == "ref":
+            ttk.Combobox(parent, textvariable=var,
+                         values=self._ref_ids(spec[1]), width=22,
+                         state="readonly").pack(side="left")
+            return
+        if isinstance(spec, tuple) and spec[0] == "dyn_ref":
+            dyn_map = spec[1]
+            combo = ttk.Combobox(parent, textvariable=var, width=22,
+                                 state="readonly")
+            combo.pack(side="left")
+
+            def refresh(*_a, _s=sibling, _m=dyn_map, _c=combo):
+                fresh = (self._ref_ids(_m[str(_s.get())])
+                         if _s is not None and str(_s.get()) in _m
+                         else [])
+                _c.configure(values=fresh)
+                if _c.get() and _c.get() not in fresh:
+                    _c.set(fresh[0] if fresh else "")
+            if sibling is not None:
+                sibling.trace_add("write", refresh)
+            refresh()
+            return
+        tk.Entry(parent, textvariable=var, width=16).pack(side="left")
+
+    @classmethod
+    def _coerce_member(cls, mspec, text):
+        """Member text → declared type (ids stay strings)."""
+        spec = mspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
+        if isinstance(spec, str):
+            return cls._coerce(spec, text)
+        return text
+
+    # --- D16 row editors (list / dict_int share this vocabulary) ------------
+
+    @staticmethod
+    def _svar(value) -> tk.Variable:
+        return tk.StringVar(value="" if value is None else str(value))
+
+    @classmethod
+    def _var_row(cls, mspec, item) -> list[tk.Variable]:
+        """Variables for one element row: scalar → one var, pair → two."""
+        spec = mspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
+        if isinstance(spec, tuple) and spec[0] == "pair":
+            seq = (item if isinstance(item, (list, tuple))
+                   and len(item) == 2 else (None, None))
+            return [cls._svar(seq[0]), cls._svar(seq[1])]
+        return [cls._svar(item)]
+
+    @classmethod
+    def _coerce_row(cls, mspec, rvars):
+        """A row's variables → the element value (typed)."""
+        spec = mspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
+        if isinstance(spec, tuple) and spec[0] == "pair":
+            return [cls._coerce_member(spec[1], rvars[0].get()),
+                    cls._coerce_member(spec[2], rvars[1].get())]
+        return cls._coerce_member(spec, rvars[0].get())
+
+    def _default_element(self, mspec):
+        """Sensible starting values for a new row (ids from the live
+        bundle — D12; dyn_ref waits for its sibling's refresh)."""
+        spec = mspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
+        if isinstance(spec, str):
+            return {"int": 0, "number": 0, "bool": False}.get(spec, "")
+        if isinstance(spec, tuple) and spec[0] == "enum":
+            return spec[1][0] if spec[1] else ""
+        if isinstance(spec, tuple) and spec[0] == "ref":
+            ids = self._ref_ids(spec[1])
+            return ids[0] if ids else ""
+        if isinstance(spec, tuple) and spec[0] == "pair":
+            return [self._default_element(spec[1]),
+                    self._default_element(spec[2])]
+        return ""
+
+    def _build_row(self, parent, mspec, rvars) -> None:
+        """Widgets for one element row (pair → [left · right])."""
+        spec = mspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
+        if isinstance(spec, tuple) and spec[0] == "pair":
+            self._member(parent, spec[1], rvars[0])
+            tk.Label(parent, text="·").pack(side="left", padx=3)
+            self._member(parent, spec[2], rvars[1], sibling=rvars[0])
+        else:
+            self._member(parent, spec, rvars[0])
+
+    def _add_list(self, row, field, spec, value, was_opt) -> None:
+        """D16: list editor — one row per element (member widget per
+        `spec[1]`) with add/remove/↑↓ chrome. `rowvars[field]` holds one
+        variable-list per row (D17). Rows never rebuild on value edits
+        (focus-safe) — only add/remove/move clicks rebuild."""
+        mspec = spec[1]
+        items = list(value) if isinstance(value, list) else []
+        container = tk.Frame(row)
+        container.pack(side="left", fill="x", expand=True)
+        self.rowvars[field] = [self._var_row(mspec, it) for it in items]
+
+        def write(*_a):
+            built = [self._coerce_row(mspec, rv)
+                     for rv in self.rowvars[field]]
+            if was_opt and not built:
+                self.record.pop(field, None)
+            else:
+                self.record[field] = built
+            self._changed()
+
+        def rebuild():
+            for child in container.winfo_children():
+                child.destroy()
+            rows = self.rowvars[field]
+            for i, rv in enumerate(rows):
+                line = tk.Frame(container)
+                line.pack(fill="x")
+                self._build_row(line, mspec, rv)
+                tk.Button(line, text="✕", width=2,
+                          command=lambda i=i: remove(i)).pack(
+                    side="left", padx=(6, 1))
+                tk.Button(line, text="↑", width=2,
+                          state="disabled" if i == 0 else "normal",
+                          command=lambda i=i: move(i, -1)).pack(
+                    side="left")
+                tk.Button(line, text="↓", width=2,
+                          state="disabled" if i == len(rows) - 1
+                          else "normal",
+                          command=lambda i=i: move(i, +1)).pack(
+                    side="left")
+            tk.Button(container, text="+ add row",
+                      command=add).pack(anchor="w")
+
+        def remove(i):
+            self.rowvars[field].pop(i)
+            rebuild()
+            write()
+
+        def move(i, delta):
+            rows = self.rowvars[field]
+            j = i + delta
+            if 0 <= j < len(rows):
+                rows[i], rows[j] = rows[j], rows[i]
+                rebuild()
+                write()
+
+        def add():
+            rv = self._var_row(mspec, self._default_element(mspec))
+            for v in rv:
+                v.trace_add("write", write)
+            self.rowvars[field].append(rv)
+            rebuild()
+            write()
+
+        for rv in self.rowvars[field]:
+            for v in rv:
+                v.trace_add("write", write)
+        rebuild()
+
+    def _add_dict_int(self, row, field, spec, value, was_opt) -> None:
+        """D16: dict_int editor (patterns.materials) — rows of
+        (ref, int) with add/remove but NO reorder: rows only append or
+        drop, so the recorded key order is written back unchanged
+        (constraint 4). A duplicate key collapses on write and the rows
+        rebuild from the record — the merge is visible, never silent.
+        rowvars[field] = [[key_var, qty_var], ...] (D17)."""
+        target = spec[1]
+        items = dict(value) if isinstance(value, dict) else {}
+        container = tk.Frame(row)
+        container.pack(side="left", fill="x", expand=True)
+        self.rowvars[field] = [
+            [self._svar(k), self._svar(q)] for k, q in items.items()]
+
+        def write(*_a):
+            rows = self.rowvars[field]
+            built: dict = {}
+            for rv in rows:
+                key = rv[0].get()
+                if key:
+                    built[key] = self._coerce_member("int", rv[1].get())
+            if was_opt and not built:
+                self.record.pop(field, None)
+            else:
+                self.record[field] = built
+            keys = [rv[0].get() for rv in rows if rv[0].get()]
+            if len(keys) != len(set(keys)):  # duplicate key merged —
+                # show the surviving record, never a silent collapse
+                self.rowvars[field] = [
+                    [self._svar(k), self._svar(q)]
+                    for k, q in self.record[field].items()]
+                rebuild()
+            self._changed()
+
+        def rebuild():
+            for child in container.winfo_children():
+                child.destroy()
+            rows = self.rowvars[field]
+            for i, rv in enumerate(rows):
+                line = tk.Frame(container)
+                line.pack(fill="x")
+                ttk.Combobox(line, textvariable=rv[0],
+                             values=self._ref_ids(target), width=26,
+                             state="readonly").pack(side="left")
+                tk.Entry(line, textvariable=rv[1], width=7).pack(
+                    side="left", padx=(4, 0))
+                tk.Button(line, text="✕", width=2,
+                          command=lambda i=i: remove(i)).pack(
+                    side="left", padx=(6, 0))
+            tk.Button(container, text="+ material",
+                      command=add).pack(anchor="w")
+
+        def remove(i):
+            self.rowvars[field].pop(i)
+            rebuild()
+            write()
+
+        def add():
+            rv = [self._svar(""), self._svar("0")]
+            for v in rv:
+                v.trace_add("write", write)
+            self.rowvars[field].append(rv)
+            rebuild()  # empty key = no data change yet; write on pick
+
+        for rv in self.rowvars[field]:
+            for v in rv:
+                v.trace_add("write", write)
+        rebuild()
 
 
 def main(argv: list[str]) -> int:

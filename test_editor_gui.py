@@ -357,3 +357,177 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 print("GUI smoke OK: 2c forms, save, guards")
+
+# --- 2d: one edit + one blocked bad edit per file (D17: form model only) ----
+dialogued.clear()
+_real2 = {name: getattr(editor_mod.messagebox, name) for name in
+          ("showerror", "showinfo", "showwarning", "askyesno",
+           "askyesnocancel")}
+tmp2 = Path(tempfile.mkdtemp(prefix="forms2_"))
+try:
+    for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
+        shutil.copy(f, tmp2 / f.name)
+    for _n in ("showerror", "showinfo", "showwarning"):
+        setattr(editor_mod.messagebox, _n, _rec(_n))
+    editor_mod.messagebox.askyesno = _rec("askyesno", True)
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", True)
+
+    root2, viewer = build(tmp2)
+
+    def _first_id(fname):
+        return viewer._records_of(fname)[0][0]
+
+    def _btn(text, which=-1):
+        """Chrome is buttons (D17: existence-level), values are model."""
+        found = [w for w in _walk(viewer.records_frame)
+                 if w.winfo_class() == "Button"
+                 and str(w.cget("text")) == text]
+        assert found, f"no {text!r} button"
+        return found[which]
+
+    def _roundtrip(fname, edit_field, new_value, expected,
+                   bad_field, bad_value):
+        """2d acceptance for one file: bad edit blocks (nothing
+        written), repair, then edit→save→reload through the form."""
+        rec_id = _first_id(fname)
+        idx = list(CONTENT_FILES).index(fname)
+        viewer.file_list.selection_set(idx)
+        viewer._render_file(idx)
+        viewer._on_edit_toggle(fname, rec_id)
+        form = viewer._forms[(fname, rec_id)]
+        assert form is not None, f"{fname}: Edit must mount a form"
+        # blocked bad edit: live problem + showerror + still dirty
+        orig = form.vars[bad_field].get()
+        form.vars[bad_field].set(bad_value)
+        assert viewer.problems, f"{fname}: bad edit must surface live"
+        dialogued.clear()
+        viewer._on_save()
+        assert dialogued and dialogued[0][0] == "showerror", \
+            f"{fname}: save blocked, got {dialogued}"
+        assert viewer.dirty, f"{fname}: blocked save keeps the file dirty"
+        form.vars[bad_field].set(orig)          # repair the buffer
+        assert viewer.problems == [], (fname, viewer.problems)
+        # edit → save → reload round-trip, with the D15 ● lifecycle
+        form.vars[edit_field].set(new_value)
+        assert (fname, rec_id) in viewer._record_dirty, "D15 marks edits"
+        viewer._on_save()
+        assert viewer.dirty == set(), (fname, viewer.dirty)
+        assert (fname, rec_id) not in viewer._record_dirty, \
+            "D15: saving clears the mark"
+        viewer.reload()                          # also clears pane state
+        data = dict(viewer._records_of(fname))[rec_id]
+        assert data[edit_field] == expected, (fname, data[edit_field])
+
+    _roundtrip("skills", "name", "Endurance", "Endurance",
+               "start_level", "many")
+    _roundtrip("stats", "name", "Might", "Might",
+               "start_level", "nope")
+    _roundtrip("events", "text", "A strange quiet falls.",
+               "A strange quiet falls.", "check", "sometimes")
+    _roundtrip("balance", "EVENT_CHANCE", "0.42", 0.42,
+               "EVENT_CHANCE", "often")
+    _roundtrip("actions", "label", "Gather Snacks", "Gather Snacks",
+               "behavior", "juggling")
+    _roundtrip("patterns", "work", "13", 13, "skill_req", "soon")
+
+    # D14 pane: Edit mounts the single-record pane, Done leaves it, and
+    # a jump is browse intent that unmounts it
+    a0 = _first_id("actions")
+    idx_a = list(CONTENT_FILES).index("actions")
+    viewer.file_list.selection_set(idx_a)
+    viewer._render_file(idx_a)
+    viewer._on_edit_toggle("actions", a0)
+    assert viewer._pane_edit == ("actions", a0)
+    assert set(viewer._blocks) == {("actions", a0)}, \
+        "the pane shows exactly one record"
+    viewer._on_edit_toggle("actions", a0)        # Done → browsing
+    assert viewer._pane_edit is None
+    assert len(viewer._blocks) > 1, "stacked browsing returns"
+    viewer._on_edit_toggle("actions", a0)        # back into the pane
+    other = viewer._records_of("actions")[1][0]
+    viewer._jump_to("actions", other)
+    assert viewer._pane_edit is None, "a jump is browse intent (D14)"
+
+    # D16 on the pane record: nested gather (child form), nullable
+    # skill "(none)" ↔ null, and the checks list editor
+    gather_id = next(rid for rid, rec in viewer._records_of("actions")
+                     if isinstance(rec, dict) and "gather" in rec)
+    viewer._on_edit_toggle("actions", gather_id)
+    gather_rec = dict(viewer._records_of("actions"))[gather_id]
+    form = viewer._forms[("actions", gather_id)]
+    assert "gather" in form.groups, "nested block mounts a child form"
+    child = form.groups["gather"]
+    child.vars["success"].set("You pocket {amount} treasures.")
+    assert gather_rec["gather"]["success"] == \
+        "You pocket {amount} treasures."
+    form.vars["skill"].set("(none)")
+    assert gather_rec["skill"] is None, "nullable (none) stores null"
+    skill0 = next(iter(viewer.bundle.skills))
+    form.vars["skill"].set(skill0)
+    assert gather_rec["skill"] == skill0
+
+    assert "checks" in form.rowvars
+    n0 = len(form.rowvars["checks"])
+    _btn("+ add row").invoke()
+    _btn("+ add row").invoke()
+    assert len(form.rowvars["checks"]) == n0 + 2, "rows append"
+    row = form.rowvars["checks"][-1]
+    stats0 = next(iter(viewer.bundle.stats))
+    row[0].set("stats")                          # dyn_ref sibling filter
+    row[1].set(stats0)
+    assert gather_rec["checks"][-1] == ["stats", stats0]
+    second_row = form.rowvars["checks"][1]
+    _btn("↓", 1).invoke()                        # first ↓ is record ops
+    assert form.rowvars["checks"][0] is second_row, "rows reorder"
+    _btn("✕", -1).invoke()                       # remove the added rows
+    _btn("✕", -1).invoke()
+    assert len(form.rowvars["checks"]) == n0
+    viewer._on_save()
+    assert viewer.dirty == set(), "pane edits save cleanly"
+
+    # D16 dict_int (patterns.materials): qty edit, add/remove, and a
+    # key that survives the save — with constraint-4 key order intact
+    p_id = _first_id("patterns")
+    idx_p = list(CONTENT_FILES).index("patterns")
+    viewer.file_list.selection_set(idx_p)
+    viewer._render_file(idx_p)
+    viewer._on_edit_toggle("patterns", p_id)
+    pform = viewer._forms[("patterns", p_id)]
+    mats = pform.rowvars["materials"]
+    assert mats, "fixture patterns declare materials"
+    key0 = mats[0][0].get()
+    mats[0][1].set("7")
+    assert viewer.bundle.patterns[p_id]["materials"][key0] == 7
+    n_mats = len(mats)
+    _btn("+ material").invoke()
+    assert len(pform.rowvars["materials"]) == n_mats + 1, \
+        "an empty-key row waits for its key (no phantom collapse)"
+    _btn("✕", -1).invoke()
+    assert len(pform.rowvars["materials"]) == n_mats
+    _btn("+ material").invoke()
+    existing = set(viewer.bundle.patterns[p_id]["materials"])
+    item0 = next(r["id"] for r in viewer.bundle.items
+                 if r["id"] not in existing)
+    mrows = pform.rowvars["materials"]
+    mrows[-1][0].set(item0)
+    mrows[-1][1].set("3")
+    assert viewer.bundle.patterns[p_id]["materials"].get(item0) == 3
+    viewer._on_save()
+    assert viewer.dirty == set()
+    viewer.reload()
+    pats = dict(viewer._records_of("patterns"))[p_id]
+    assert pats["materials"][key0] == 7 and pats["materials"][item0] == 3, \
+        "materials round-trip through the row editor"
+    assert list(pats["materials"])[0] == key0, \
+        "constraint 4: key order survives (appended, never reordered)"
+
+    # clean close: no dialog, straight out
+    dialogued.clear()
+    viewer._on_close()
+    assert not dialogued, "clean close must not prompt"
+finally:
+    for _n, _fn in _real2.items():
+        setattr(editor_mod.messagebox, _n, _fn)
+    shutil.rmtree(tmp2, ignore_errors=True)
+
+print("GUI smoke OK: 2d forms, pane, nested editors")

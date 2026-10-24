@@ -130,9 +130,28 @@ Ordered; phases have one concern each (a failure has one suspect).
   naming the problem (bad start + empty name), fixture goldens
   untouched. Master-detail layout + fat-record editors deferred to
   **2d** — the RecordForm seam makes that a mount-point swap, not a
-  rewrite. Next: **2d** — forms for the remaining six files (actions
-  nested checks/gather, patterns materials dict, events list, skills/
-  stats dict keys, balance flat set).
+  rewrite. **2d is done and green** (decisions D14–D17 recorded in
+  EDITOR_BRIEF, round 4): per-file `SCHEMA[file]["layout"]` — pane for
+  actions/patterns, inline for the rest (events = deliberate
+  exception); pane v1 = one record at a time (header + Done + form +
+  ref rows), a jump is browse intent that unmounts it, and the
+  browsing architecture is unchanged for every file. D15: the ●
+  per-record mark (session set, in-place header update, cleared on
+  save/reload) replaced navigation prompts — write-through forms make
+  selection free, per the approved second-opinion round. D16
+  sub-components all live on RecordForm: `nested` → child RecordForm
+  in a LabelFrame (absent blocks attach on first edit — opening a form
+  never mutates the bundle), `list` → rows with add/remove/↑↓ chrome
+  and dyn_ref sibling-filtered dropdowns, `dict_int` → (ref, int) rows
+  add/remove only (constraint 4: key order preserved; duplicate keys
+  collapse visibly, never silently), nullable → "(none)" ↔ null. New
+  handles: `form.rowvars`, `form.groups`. Acceptance ×6 files,
+  model-first (D17): bad edit blocks + repair + edit→save→reload + ●
+  lifecycle, dialogs patched headless; full suite green. Known gap:
+  record ops (add/duplicate/reorder/delete) cover array files only —
+  dict-file ops (add a skill, reorder events) are NOT built; ask if
+  wanted. Next: **2e** — repair mode (parse-error line/column + raw
+  text fallback) and optional main.py launch integration (D3).
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in
