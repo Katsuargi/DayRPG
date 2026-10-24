@@ -121,6 +121,9 @@ SCHEMA: Dict[str, dict] = {
             "label": "string",
             "behavior": ("enum", tuple(BEHAVIOR_HANDLERS)),
             "skill": ("nullable", ("ref", "skills")),
+            "difficulty_target": (
+                "opt", ("pair", ("enum", CHECK_KINDS),
+                        ("dyn_ref", {"stats": "stats", "skills": "skills"}))),
             "checks": ("list", ("pair", ("enum", CHECK_KINDS),
                                 ("dyn_ref", {"stats": "stats",
                                              "skills": "skills"}))),
@@ -411,10 +414,43 @@ def _check_actions(
         skill = rec.get("skill")
         if skill is not None and skill not in skill_ids:
             problems.append(f"{where}: unknown skill {skill!r}")
-        elif behavior == GATHER_ITEM and skill not in skill_ids:
+        elif (
+            behavior == GATHER_ITEM
+            and skill not in skill_ids
+            and rec.get("difficulty_target") is None
+        ):
             problems.append(
-                f"{where}: gather_item actions need a valid 'skill' to check"
+                f"{where}: gather_item actions need a valid 'skill' or a "
+                "'difficulty_target' to check"
             )
+        target = rec.get("difficulty_target")
+        if target is not None:
+            if (
+                not isinstance(target, (list, tuple))
+                or len(target) != 2
+                or not isinstance(target[0], str)
+                or target[0] not in CHECK_KINDS
+            ):
+                problems.append(
+                    f"{where}: 'difficulty_target' must be [kind, key] "
+                    f"with kind one of {CHECK_KINDS}"
+                )
+            else:
+                kind, key = target
+                pool = stat_ids if kind == "stats" else skill_ids
+                if not isinstance(key, str) or key not in pool:
+                    # kind[:-1]: "stats" -> stat, "skills" -> skill
+                    problems.append(
+                        f"{where}: 'difficulty_target' unknown "
+                        f"{kind[:-1]} {key!r}"
+                    )
+            # gather_item is the only behavior with a direct check today;
+            # extend when a new behavior gains one
+            if behavior != GATHER_ITEM:
+                problems.append(
+                    f"{where}: 'difficulty_target' does not apply to "
+                    f"{behavior} actions"
+                )
         if not isinstance(rec.get("checks"), list):
             problems.append(f"{where}: 'checks' must be a JSON array")
         else:

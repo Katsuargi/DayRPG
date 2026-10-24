@@ -90,7 +90,7 @@ just aren't hand-written anymore.
 | Vitals shown in change lists | (code — vitals are engine attributes) | `STAT_LABELS` → `_snapshot` / `_diff` |
 | Action dispatch | `content/actions.json` (`behavior` field) | `ACTION_BEHAVIOR` → `_apply_<behavior>` in `_apply_action` / `run_slot` |
 | Action behavior + yields | `gather_item` params in the `gather` block of `actions.json` | `_apply_gather_item`, `_apply_rest`, `_apply_sleep` |
-| Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; optional per-record `difficulty` overrides (gather block, pattern, event) |
+| Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; per-record `difficulty` overrides (gather block, pattern, event); `difficulty_target` on an action aims its check at a stat or skill |
 | Build/craft blueprints | `content/patterns.json` | `PATTERNS` (`Pattern` dataclass) → `_apply_build_craft`, `patterns_for` |
 | Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to); tool bonuses live on the tool's **item** (`items.json` → `tool_bonus`) and are scanned by `_apply_gather_item` |
 | XP costs & level-ups | `balance.json` → `XP_TO_NEXT`, `XP_COST_STEP` | `xp_cost_for`, `add_xp` |
@@ -176,9 +176,11 @@ class/module values in tests; override per instance.
 ## The three check systems (how they interact)
 
 1. **Action check** — every gather and every pattern attempt rolls
-   `d20 + skill level ≥ ACTION_DIFFICULTY` (`_skill_check`). Optional
-   per-record overrides, absent = global: a `gather` block's
-   `difficulty`, a pattern's `difficulty`, an event's `difficulty`.
+   `d20 + level ≥ DC` (`_skill_check` / `_stat_check`). The DC defaults
+   to `ACTION_DIFFICULTY` unless a per-record `difficulty` overrides it
+   (gather block, pattern, event). A gather's check aims at its
+   action's `skill` — or at `difficulty_target: [kind, key]` when the
+   action should check a stat (or another skill) instead.
    On failure:
    effort (and build/craft materials) is spent, no yield/progress, but
    **XP is still granted**. Rest never checks.

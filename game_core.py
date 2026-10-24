@@ -98,6 +98,16 @@ TOOL_BONUSES: Dict[str, Tuple[str, int]] = {
     if "tool_bonus" in entry
 }
 
+#: difficulty_target: action id -> (kind, key) — explicit aim for an
+#: action's difficulty check when it shouldn't default to the skill in
+#: ACTION_SKILL (e.g. a gather checking Strength). Absent = aim at the
+#: action's own skill (the pre-existing behavior, unchanged).
+ACTION_TARGETS: Dict[str, Tuple[str, str]] = {
+    entry["id"]: tuple(entry["difficulty_target"])
+    for entry in CONTENT.actions
+    if "difficulty_target" in entry
+}
+
 #: Attributes consulted by an event check for each action as (kind, key)
 #: pairs, where kind is 'stats' or 'skills'. From content/actions.json.
 ACTION_CHECKS: Dict[str, Tuple[Tuple[str, str], ...]] = {
@@ -918,6 +928,18 @@ class GameEngine:
         dc = self.ACTION_DIFFICULTY if difficulty is None else difficulty
         return die + skill.level >= dc
 
+    def _stat_check(self, stat_key: str,
+                    difficulty: int | None = None) -> bool:
+        """Roll d20 + stat level against a DC.
+
+        Same single draw as _skill_check — used when an action's
+        difficulty_target names a stat instead of a skill.
+        """
+        stat = self.stats[stat_key]
+        die = self.rng.randint(1, CHECK_DIE)
+        dc = self.ACTION_DIFFICULTY if difficulty is None else difficulty
+        return die + stat.level >= dc
+
     def _recovery(self, amount: int) -> int:
         """Scale a recovery gain; the Lean to adds 10%, rounded down."""
         if amount > 0 and self.buildings.get("lean_to"):
@@ -939,8 +961,15 @@ class GameEngine:
         # The effort is spent whether or not anything is found.
         self.energy = clamp(self.energy - GATHER_ENERGY_COST)
         self.hunger = clamp(self.hunger + GATHER_HUNGER_COST)
-        skill = ACTION_SKILL[action_id]
-        if self._skill_check(skill, cfg.get("difficulty")):
+        # Aim: explicit difficulty_target, else the action's own skill.
+        target = ACTION_TARGETS.get(action_id)
+        if target is not None and target[0] == "stats":
+            passed = self._stat_check(target[1], cfg.get("difficulty"))
+        else:
+            key = (target[1] if target is not None
+                   else ACTION_SKILL[action_id])
+            passed = self._skill_check(key, cfg.get("difficulty"))
+        if passed:
             low, high = cfg["yield"]
             amount = self.rng.randint(low, high)
             # Best owned tool tagged for this action wins; copies of the

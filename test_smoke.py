@@ -273,6 +273,26 @@ try:
         p.startswith("patterns.json: 'steel_pick'") and "item" in p
         for p in probs
     ), probs
+
+    # (m) difficulty_target: [kind, key] must resolve; only meaningful
+    # on behaviors that perform a direct check (gather_item today)
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    shutil.copy(_FIXTURE / "patterns.json", _tmp / "patterns.json")
+    actions = json.loads((_tmp / "actions.json").read_text(encoding="utf-8"))
+    actions[0]["difficulty_target"] = ["stats", "agility"]  # unknown stat
+    actions[2]["difficulty_target"] = ["stats", "strength"]  # rest: no check
+    (_tmp / "actions.json").write_text(json.dumps(actions, indent=2),
+                                       encoding="utf-8")
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None, "schema problems must stay loadable"
+    assert any(
+        p.startswith("actions.json: 'gather_food'") and "agility" in p
+        for p in probs
+    ), probs
+    assert any(
+        p.startswith("actions.json: 'rest'") and "difficulty_target" in p
+        for p in probs
+    ), probs
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")
@@ -350,6 +370,50 @@ for _fname, _spec in content.SCHEMA.items():
         assert any(p.file == f"{_fname}.json" for p in _probs), (
             _fname, _field, _probs)
 print("Schema drift OK")
+
+# --- Stat-targeted difficulty: behavior (subprocess on temp content) --------
+# Copy of the fixture where gather_food aims its check at Strength
+# (difficulty_target) with DC 21: a d20 can never beat it at strength 0,
+# always beats it at strength 99 — deterministic both ways, no seed luck.
+_tmp_t = Path(tempfile.mkdtemp(prefix="stat_target_"))
+try:
+    for _f in _FIXTURE.glob("*.json"):
+        shutil.copy(_f, _tmp_t / _f.name)
+    _actions = json.loads((_tmp_t / "actions.json").read_text(encoding="utf-8"))
+    _actions[0]["difficulty_target"] = ["stats", "strength"]
+    _actions[0]["gather"]["difficulty"] = 21
+    (_tmp_t / "actions.json").write_text(
+        json.dumps(_actions, indent=2), encoding="utf-8")
+    _code = (
+        "from game_core import GameEngine\n"
+        "def run(level):\n"
+        "    e = GameEngine(seed=3)\n"
+        "    e.EVENT_CHANCE = 0.0\n"
+        "    e.stats['strength'].level = level\n"
+        "    e.set_slot_action(0, 'gather_food')\n"
+        "    e.begin_day()\n"
+        "    return e.run_slot(0)\n"
+        "weak, strong = run(0), run(99)\n"
+        "assert not weak.success, weak.note\n"
+        "assert strong.success, strong.note\n"
+        "assert not any(lbl == 'Berries' for lbl, _ in weak.changes)\n"
+        "assert any(lbl == 'Berries' and d >= 2\n"
+        "           for lbl, d in strong.changes), strong.changes\n"
+        "print('stat-target child OK')\n"
+    )
+    _spawn = subprocess.run(
+        [sys.executable, "-c", _code],
+        capture_output=True,
+        text=True,
+        cwd=str(_ROOT),
+        env={**os.environ, "DAY_SCHEDULER_CONTENT_DIR": str(_tmp_t)},
+    )
+    assert _spawn.returncode == 0, (
+        "stat-target check failed:\n" + _spawn.stdout + _spawn.stderr
+    )
+finally:
+    shutil.rmtree(_tmp_t, ignore_errors=True)
+print("Stat-target difficulty OK (strength aims the check)")
 
 # --- Startup gate: the exact function main.py runs before opening ----------
 gate_problems = run_live_check()
