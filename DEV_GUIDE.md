@@ -90,7 +90,7 @@ just aren't hand-written anymore.
 | Vitals shown in change lists | (code — vitals are engine attributes) | `STAT_LABELS` → `_snapshot` / `_diff` |
 | Action dispatch | `content/actions.json` (`behavior` field) | `ACTION_BEHAVIOR` → `_apply_<behavior>` in `_apply_action` / `run_slot` |
 | Action behavior + yields | `gather_item` params in the `gather` block of `actions.json` | `_apply_gather_item`, `_apply_rest`, `_apply_sleep` |
-| Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; a `gather` block's `difficulty` overrides it |
+| Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; optional per-record `difficulty` overrides (gather block, pattern, event) |
 | Build/craft blueprints | `content/patterns.json` | `PATTERNS` (`Pattern` dataclass) → `_apply_build_craft`, `patterns_for` |
 | Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to), tool bonus in `_apply_gather_item` |
 | XP costs & level-ups | `balance.json` → `XP_TO_NEXT`, `XP_COST_STEP` | `xp_cost_for`, `add_xp` |
@@ -159,14 +159,16 @@ class/module values in tests; override per instance.
 ## The three check systems (how they interact)
 
 1. **Action check** — every gather and every pattern attempt rolls
-   `d20 + skill level ≥ ACTION_DIFFICULTY` (`_skill_check`). A `gather`
-   block's optional `difficulty` overrides the DC for that one action.
+   `d20 + skill level ≥ ACTION_DIFFICULTY` (`_skill_check`). Optional
+   per-record overrides, absent = global: a `gather` block's
+   `difficulty`, a pattern's `difficulty`, an event's `difficulty`.
    On failure:
    effort (and build/craft materials) is spent, no yield/progress, but
    **XP is still granted**. Rest never checks.
 2. **Event check** — when the 10% fires, `_resolve_event` sums the levels
    of the action's `ACTION_CHECKS` contributors (e.g. Foraging + Strength),
-   then rolls `d20 + bonus ≥ EVENT_DIFFICULTY`. Success: `EVENT_XP_SUCCESS`
+   then rolls `d20 + bonus ≥ EVENT_DIFFICULTY` (an event's optional
+   `difficulty` overrides that DC). Success: `EVENT_XP_SUCCESS`
    to each contributor. Failure: `EVENT_XP_FAILURE` each, plus the health
    penalty. `REST: ()` means "no check, flavor only".
 3. **Pattern attempt** — materials are checked, consumed (even on

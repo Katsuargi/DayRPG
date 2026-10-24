@@ -146,6 +146,7 @@ SCHEMA: Dict[str, dict] = {
             "work": "int",
             "description": "string",
             "effect": ("opt", "string"),
+            "difficulty": ("opt", "int"),
         },
     },
     "events": {
@@ -155,6 +156,7 @@ SCHEMA: Dict[str, dict] = {
             "text": "string",
             "actions": ("list", ("ref", "actions")),
             "check": "bool",
+            "difficulty": ("opt", "int"),
         },
     },
     "balance": {
@@ -278,6 +280,16 @@ def _check_items(items: Any, problems: List[str]) -> Set[str]:
     return ids
 
 
+def _check_optional_dc(
+    where: str, value: Any, problems: List[str]
+) -> None:
+    """Optional difficulty: absent = use the global DC; else int >= 1."""
+    if value is not None and (
+        not isinstance(value, int) or isinstance(value, bool) or value < 1
+    ):
+        problems.append(f"{where}: 'difficulty' must be an integer >= 1")
+
+
 def _check_gather(
     where: str, gather: Any, item_ids: Set[str], tool_ids: Set[str],
     problems: List[str],
@@ -341,13 +353,7 @@ def _check_gather(
             f"{gwhere}: 'tool_bonus' must be [tool pattern id, "
             "integer >= 1]"
         )
-    difficulty = gather.get("difficulty")
-    if difficulty is not None and (
-        not isinstance(difficulty, int)
-        or isinstance(difficulty, bool)
-        or difficulty < 1
-    ):
-        problems.append(f"{gwhere}: 'difficulty' must be an integer >= 1")
+    _check_optional_dc(gwhere, gather.get("difficulty"), problems)
 
 
 def _check_level_table(
@@ -494,6 +500,7 @@ def _check_patterns(
                 problems.append(
                     f"{where}: '{field_name}' must be an integer >= 1"
                 )
+        _check_optional_dc(where, rec.get("difficulty"), problems)
         if not isinstance(rec.get("description"), str) or not rec["description"]:
             problems.append(
                 f"{where}: 'description' must be a non-empty string"
@@ -542,6 +549,7 @@ def _check_events(
                     )
         if not isinstance(rec.get("check"), bool):
             problems.append(f"{where}: 'check' must be true or false")
+        _check_optional_dc(where, rec.get("difficulty"), problems)
 
 
 def _check_balance(balance: Any, problems: List[str]) -> None:

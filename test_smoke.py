@@ -279,9 +279,11 @@ def _wrong_value(spec):
     """A value no type in the vocabulary should accept."""
     if isinstance(spec, str):
         return _WRONG.get(spec, 7)
+    if spec[0] in ("opt", "nullable"):
+        return _wrong_value(spec[1])  # wrong for the INNER type (opt-int: "seven")
     if spec[0] == "enum":
         return "not-an-option"
-    return 7  # opt/nullable/ref/pair/list/dict_int/nested all reject 7
+    return 7  # ref/pair/list/dict_int/nested all reject 7
 
 
 def _mutated(fname: str, rec: dict) -> dict:

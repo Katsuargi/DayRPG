@@ -91,6 +91,12 @@ Ordered; phases have one concern each (a failure has one suspect).
   headless write layer (D9 Save-All, D11 stale guard, D10 canonical
   form, `test_content_write.py`). The user wants to nitpick viewer
   UX before forms build on it.
+- **Viewer nitpick #1 (completed difficulty):** every check site now
+  takes an optional record-level `difficulty` — patterns and events
+  gained it (gather already had its block field); the globals in
+  balance.json stay the defaults. Content left unchanged, so seeded
+  output stays byte-identical (proven by the suite). The viewer shows
+  the new fields through SCHEMA with zero viewer code.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation

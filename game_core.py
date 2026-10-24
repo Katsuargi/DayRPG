@@ -141,6 +141,7 @@ class Pattern:
     work: int  # successful attempts needed to finish
     description: str
     effect: str = ""  # mechanic explanation, shown in tooltips
+    difficulty: int | None = None  # DC override; None = ACTION_DIFFICULTY
 
 
 #: All known patterns, from content/patterns.json; ids are persisted in
@@ -156,6 +157,7 @@ PATTERNS: Dict[str, Pattern] = {
         work=record["work"],
         description=record["description"],
         effect=record.get("effect", ""),
+        difficulty=record.get("difficulty"),
     )
     for key, record in CONTENT.patterns.items()
 }
@@ -168,13 +170,15 @@ class RandomEvent:
     """A named random event drawn when the per-slot event roll fires.
 
     `actions` limits which actions can trigger it (empty = any action);
-    `check=False` makes it pure flavor — no roll and no effects.
+    `check=False` makes it pure flavor — no roll and no effects;
+    `difficulty` overrides the event DC when set.
     """
 
     id: str
     text: str
     actions: Tuple[str, ...] = ()
     check: bool = True
+    difficulty: int | None = None  # DC override; None = EVENT_DIFFICULTY
 
 
 #: When an event fires for an action, the engine filters this table by
@@ -188,6 +192,7 @@ RANDOM_EVENTS: Dict[str, RandomEvent] = {
         text=record["text"],
         actions=tuple(record["actions"]),
         check=record["check"],
+        difficulty=record.get("difficulty"),
     )
     for key, record in CONTENT.events.items()
 }
@@ -836,7 +841,9 @@ class GameEngine:
             labels.append(self._display_name(kind, key))
         die = self.rng.randint(1, CHECK_DIE)
         roll = die + bonus
-        success = roll >= EVENT_DIFFICULTY
+        dc = (chosen.difficulty if chosen is not None
+              and chosen.difficulty is not None else EVENT_DIFFICULTY)
+        success = roll >= dc
 
         award = EVENT_XP_SUCCESS if success else EVENT_XP_FAILURE
         event_changes: List[Change] = []
@@ -969,7 +976,7 @@ class GameEngine:
         for item, qty in pattern.materials.items():
             self.inventory[item] -= qty  # surfaces via the slot diff
 
-        if not self._skill_check(pattern.skill):
+        if not self._skill_check(pattern.skill, pattern.difficulty):
             notes.append(
                 f"your attempt at the {pattern.name} fails — the materials "
                 "are spent, but the effort still teaches."
