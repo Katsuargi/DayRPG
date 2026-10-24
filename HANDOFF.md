@@ -109,6 +109,16 @@ Ordered; phases have one concern each (a failure has one suspect).
   BALANCE_KEYS is code-gated — it would break zero-Python additions
   and editor-only content creation; lean-to's amount defers to the
   effects registry phase.
+- **Viewer nitpick #4 (tools are items — decided):** crafted tools now
+  live in items.json as inventory records (`wood_axe`), not a separate
+  `engine.tools` table (legacy saves fold their tools into inventory
+  on load). The bonus moved onto the tool's item —
+  `tool_bonus: ["gather_wood", 1]` — and a gather action scans
+  inventory for items tagged with its own id, applying the HIGHEST
+  amount (copies never stack; tier numbers deferred until merchants
+  need pricing). Craft pattern ids must be item ids (validated); the
+  GUI tools panel, check_live invariants, and ITEM_ORDER golden
+  updated. Seeded outputs stayed byte-identical.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
