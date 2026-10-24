@@ -23,3 +23,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-23 | nitpick #2: gather sub-row rendering (difficulty visible) | 06e250a | test_editor_gui + test_smoke green
 - 2026-10-23 | nitpick #3: Tunables view + split rule (effects stay with records) | 9f648bd | test_editor_gui + test_smoke + check_live green
 - 2026-10-23 | nitpick #4: tools are items (tagged tool_bonus, best-owned scan) | 28ef988 | test_smoke + check_live + test_editor_gui green
+- 2026-10-23 | stone_axe probe recorded (zero-Python verified, reverted) | b563941 | docs-only
