@@ -19,3 +19,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-23 | PROGRESS.md ledger created (backfilled) | 53f943b | docs-only
 - 2026-10-23 | Phase 2a read-only viewer + SCHEMA + drift tests | 914155a | test_smoke + check_live + test_editor_gui green
 - 2026-10-23 | push policy recorded (user-directed pushes) | e8791b0 | docs-only
+- 2026-10-23 | nitpick #1: per-record difficulty (patterns + events) | bde78a4 | test_smoke + check_live + test_editor_gui green
