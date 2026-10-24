@@ -132,6 +132,17 @@ Ordered; phases have one concern each (a failure has one suspect).
   aim at the pattern's skill). Stat-tied gather_item actions (skill:
   null) are now legal when a target is declared. Behavioral proof in
   test_smoke: DC 21 vs strength 0/99 fails/passes deterministically.
+- **Viewer round (Claude-suggested, 2026-10-23):** uses/used-by links on
+  every record + click-through navigation (`_jump_to`, shared with
+  problem rows) + Economy view (per-item sources/sinks; an item nothing
+  grants is flagged red). `content.collect_references()` = schema-driven
+  reference graph (24 edges on live content) — the same data 2c's
+  delete-blocking will need. Sinks are content-declared only; engine
+  consumption (Sleep eating food) is NOT modeled in the viewer — the
+  recommended design-lint tool (report, not gate; awaiting user go)
+  would be engine-aware via the check_live precedent. Economy view
+  finding on live content: stone + herbs are unobtainable (expected
+  placeholders — their items say "Not used yet").
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
@@ -148,6 +159,14 @@ Ordered; phases have one concern each (a failure has one suspect).
 
 ## How this collaboration works best
 
+- **Committed-file drift (2026-10-23):** an invisible continuation had
+  silently rewritten editor.py (pane-based views, `try_load_content`
+  loader) and the change was already COMMITTED — memory of the file's
+  *text* was stale, so 7 old_text edits failed "not found" and one
+  blind insert broke the file (caught by the suite). Rule: before
+  editing any file you believe is untouched, `git diff HEAD -- <file>`
+  and grep the current text; edit what IS there, never what you
+  remember.
 - **Timeout lesson:** two prior runs died at ~2435s, both inside single
   huge thinking blocks before any file write. What worked: lean
   thinking, small batched edits (keep tool inputs modest, ~6k chars),

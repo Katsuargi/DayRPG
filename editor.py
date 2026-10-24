@@ -15,7 +15,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
-from content import CONTENT_FILES, SCHEMA, try_load_content
+from content import (CONTENT_FILES, SCHEMA, collect_references,
+                     try_load_content)
 
 BANNER_BG = "#8b1a1a"
 FLASH_BG = "#ffe39a"
@@ -40,6 +41,8 @@ class ContentViewer:
         self.bundle = None
         self.problems = []
         self._blocks: dict[tuple[str, str], tk.Widget] = {}
+        self._ref_out: dict = {}
+        self._ref_in: dict = {}
         self._build_widgets()
         self.reload()
 
@@ -67,8 +70,12 @@ class ContentViewer:
         self.btn_tun = tk.Button(
             views, text="Tunables",
             command=lambda: self._show_view("tunables"))
+        self.btn_econ = tk.Button(
+            views, text="Economy",
+            command=lambda: self._show_view("economy"))
         self.btn_files.pack(side="left", padx=2)
         self.btn_tun.pack(side="left", padx=2)
+        self.btn_econ.pack(side="left", padx=2)
 
         body = tk.PanedWindow(self.root, orient="horizontal", sashwidth=4)
         body.pack(fill="both", expand=True, padx=8, pady=4)
@@ -89,6 +96,7 @@ class ContentViewer:
         # aggregate Tunables sheet; toggled by the toolbar buttons
         self.files_pane = tk.Frame(right)
         self.tunables_pane = tk.Frame(right)
+        self.economy_pane = tk.Frame(right)
         self.records_canvas = tk.Canvas(self.files_pane,
                                         highlightthickness=0)
         scroll = tk.Scrollbar(self.files_pane, orient="vertical",
@@ -107,6 +115,8 @@ class ContentViewer:
         self.files_pane.pack(fill="both", expand=True)
         self._bind_scroll(self.records_frame)
         self._build_tunables_pane()
+        self._build_economy_pane()
+
         self._show_view("files")
 
         panel = tk.LabelFrame(self.root, text="Problems", padx=6, pady=4)
@@ -130,18 +140,19 @@ class ContentViewer:
     # --- tunables view (wholesale balance review, one screen) -------------
 
     def _show_view(self, which: str) -> None:
-        """Toggle Browse (records) vs Tunables (aggregate numbers)."""
+        """Toggle Browse (records) / Tunables (aggregate) / Economy (item
+        flow) — each view is its own pane; only one is packed at a time."""
         self.view = which
-        if which == "files":
-            self.tunables_pane.pack_forget()
-            self.files_pane.pack(fill="both", expand=True)
-            self.btn_files.config(relief="sunken")
-            self.btn_tun.config(relief="raised")
-        else:
-            self.files_pane.pack_forget()
-            self.tunables_pane.pack(fill="both", expand=True)
-            self.btn_files.config(relief="raised")
-            self.btn_tun.config(relief="sunken")
+        panes = {"files": self.files_pane, "tunables": self.tunables_pane,
+                 "economy": self.economy_pane}
+        for name, pane in panes.items():
+            if name == which:
+                pane.pack(fill="both", expand=True)
+            else:
+                pane.pack_forget()
+        for name, btn in (("files", self.btn_files), ("tunables", self.btn_tun),
+                          ("economy", self.btn_econ)):
+            btn.config(relief="sunken" if name == which else "raised")
 
     def _build_tunables_pane(self) -> None:
         tk.Label(
@@ -159,6 +170,33 @@ class ContentViewer:
         self.tunables_tree.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         self.tunables_tree.pack(fill="both", expand=True)
+
+    def _build_economy_pane(self) -> None:
+        tk.Label(
+            self.economy_pane, anchor="w", font=(None, 10, "bold"),
+            text="Economy — per-item sources and sinks (content-declared "
+                 "flows only)",
+        ).pack(fill="x", padx=4, pady=(4, 2))
+        self.economy_tree = ttk.Treeview(
+            self.economy_pane, columns=("note",), show="tree headings")
+        self.economy_tree.heading("#0", text="item / flow")
+        self.economy_tree.heading("note", text="note")
+        self.economy_tree.column("note", width=320, anchor="w")
+        self.economy_tree.tag_configure("bad", foreground="#b00020")
+        vsb = tk.Scrollbar(self.economy_pane, orient="vertical",
+                           command=self.economy_tree.yview)
+        self.economy_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self.economy_tree.pack(fill="both", expand=True)
+        tk.Label(
+            self.economy_pane, anchor="w", fg=MUTED_FG, justify="left",
+            text=(
+                "Sources = how an item enters play (initial stock, gather "
+                "yields, craft outputs). Sinks = content consumption "
+                "(pattern materials); tools are equipment, not consumed. "
+                "Engine-side consumption (e.g. Sleep eating food) is not "
+                "content-declared. Red = nothing grants this item."),
+        ).pack(fill="x", padx=4, pady=(0, 4))
 
     def _build_tunables(self) -> None:
         """Rebuild the aggregate sheet from the schema + current bundle."""
@@ -209,6 +247,85 @@ class ContentViewer:
                 shown = self._value_text(spec, value, fname)
             if shown is not None:
                 tree.insert(parent, "end", text=field, values=(shown,))
+
+    # --- references & economy ---------------------------------------------
+
+    def _build_refs(self) -> None:
+        """Reference-graph indexes (uses/used-by) + the economy sheet,
+        both from content.collect_references — the same data 2c's
+        delete-blocking will use."""
+        self._ref_out = {}
+        self._ref_in = {}
+        if self.bundle is not None:
+            for e in collect_references(self.bundle):
+                self._ref_out.setdefault((e[0], e[1]), []).append(e)
+                self._ref_in.setdefault((e[3], e[4]), []).append(e)
+        self._build_economy()
+
+    def _build_economy(self) -> None:
+        """Fill the economy sheet: per-item sources and sinks. An item
+        nothing grants is tagged bad (red)."""
+        tree = self.economy_tree
+        tree.delete(*tree.get_children())
+        if self.bundle is None:
+            return
+        inbound_items = {}
+        for (to_f, to_r), elist in self._ref_in.items():
+            if to_f == "items":
+                inbound_items[to_r] = elist
+        sinks: dict[str, list] = {}
+        for pid, pat in self.bundle.patterns.items():
+            for mat, qty in pat["materials"].items():
+                sinks.setdefault(mat, []).append((pid, qty))
+        for rec in self.bundle.items:
+            if not isinstance(rec, dict) or "id" not in rec:
+                continue  # items.json is array-kind; be total anyway
+            iid, item = rec["id"], rec
+            sources = []
+            if item.get("start", 0):
+                sources.append(f"initial stock ×{item['start']}")
+            for e in inbound_items.get(iid, []):
+                if e[2] == "gather.item":
+                    sources.append(f"{e[1]} (gather yield)")
+            if iid in self.bundle.patterns:
+                sources.append("craft pattern (id matches)")
+            node = tree.insert("", "end", text=iid, open=True, values=("",),
+                               tags=() if sources else ("bad",))
+            snode = tree.insert(node, "end", text="sources", values=("",))
+            for s in sources or ["NOTHING grants this item"]:
+                tree.insert(snode, "end", text=s, values=("",))
+            knode = tree.insert(node, "end", text="sinks", values=("",))
+            for pid, qty in sinks.get(iid, []):
+                tree.insert(knode, "end", text=f"{pid} ×{qty}", values=("",))
+            if not sinks.get(iid):
+                if item.get("tool_bonus"):
+                    tree.insert(knode, "end",
+                                text="equipment (held, not consumed)",
+                                values=("",))
+                else:
+                    tree.insert(knode, "end", text="—", values=("",))
+
+    def _render_ref_rows(self, fname: str, rec_id: str) -> None:
+        """Uses/used-by rows: the content-declared reference graph around
+        this record; each entry jumps through the graph on click (item ->
+        the action that yields it, skill -> the pattern gated on it, ...)."""
+        for title, edges, target_end in (
+            ("uses", self._ref_out.get((fname, rec_id), []), "to"),
+            ("used by", self._ref_in.get((fname, rec_id), []), "from"),
+        ):
+            if not edges:
+                continue
+            row = tk.Frame(self.records_frame)
+            row.pack(fill="x", padx=8, pady=(0, 1))
+            tk.Label(row, anchor="w", fg=MUTED_FG, text=title,
+                     width=9).pack(side="left")
+            for e in edges:
+                tf, tr = (e[3], e[4]) if target_end == "to" else (e[0], e[1])
+                link = tk.Label(row, anchor="w", fg="#1a5fb4", cursor="hand2",
+                                text=f"{tf}.{tr} · {e[2]}")
+                link.pack(side="left", padx=(0, 10))
+                link.bind("<Button-1>",
+                          lambda _ev, f=tf, r=tr: self._jump_to(f, r))
 
     # --- data ------------------------------------------------------------
 
@@ -262,6 +379,7 @@ class ContentViewer:
             owner = getattr(prob, "file", None) or "engine"
             self.problems_list.insert("end", f"{owner}: {prob}")
         self.file_list.selection_set(0)
+        self._build_refs()      # graph indexes must exist before rendering
         self._render_file(0)
         self._build_tunables()  # keep the aggregate sheet in sync
 
@@ -278,14 +396,19 @@ class ContentViewer:
             return
         prob = self.problems[sel[0]]
         owner = getattr(prob, "file", None) or ""
-        fname = owner[: -len(".json")] if owner.endswith(".json") else None
+        fname = owner[: -len(".json")] if owner.endswith(".json") else ""
+        record_id = str(getattr(prob, "record_id", "") or "")
+        self._jump_to(fname, record_id)
+
+    def _jump_to(self, fname: str, record_id: str) -> None:
+        """Select the file, re-render, flash + scroll to the record — the
+        shared click-through for problem rows and reference links."""
         if fname in CONTENT_FILES:
             idx = list(CONTENT_FILES).index(fname)
             self.file_list.selection_clear(0, "end")
             self.file_list.selection_set(idx)
             self._render_file(idx)
-        block = self._blocks.get(
-            (fname or "", str(getattr(prob, "record_id", "") or "")))
+        block = self._blocks.get((fname, record_id))
         if block is not None:
             block.configure(bg=FLASH_BG)
             self.root.after(1200, lambda: block.configure(bg=""))
@@ -323,6 +446,7 @@ class ContentViewer:
                           font=(None, 9, "bold"), text=f"  {rec_id}")
         header.pack(fill="x", padx=4, pady=(6, 1))
         self._blocks[(fname, rec_id)] = header
+        self._render_ref_rows(fname, rec_id)
         if not isinstance(rec, dict):  # invalid data must still render
             tk.Label(self.records_frame, anchor="w", fg=ALERT_FG,
                      text=f"    not an object: {rec!r}").pack(fill="x",

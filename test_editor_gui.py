@@ -25,7 +25,7 @@ except tk.TclError:
     print("GUI smoke skipped: no display available")
     raise SystemExit(0)
 
-from content import CONTENT_FILES  # noqa: E402
+from content import CONTENT_FILES, collect_references  # noqa: E402
 from editor import ContentViewer  # noqa: E402
 
 
@@ -91,6 +91,57 @@ assert _diff is not None and "(global)" in _tree.item(_diff, "values")[0]
 _pat = _find("", "patterns.json")
 _work = _find(_pat, "lean_to")  # pattern record node exists
 assert _work is not None
+
+# reference graph: uses/used-by rows, click-through, economy sheet
+_edges = collect_references(viewer.bundle)
+assert ("actions", "gather_food", "gather.item", "items", "berries") in _edges
+assert ("patterns", "wood_axe", "materials", "items", "wood") in _edges
+assert viewer._ref_out[("actions", "gather_food")], "indexes built on reload"
+viewer._show_view("files")
+viewer.file_list.selection_clear(0, "end")
+viewer.file_list.selection_set(0)
+viewer._render_file(0)
+_rows: list[str] = []
+
+
+def _collect2(widget) -> None:
+    if isinstance(widget, tk.Label):
+        _rows.append(str(widget.cget("text")))
+    for child in widget.winfo_children():
+        _collect2(child)
+
+
+_collect2(viewer.records_frame)
+assert any(t.startswith("used by") for t in _rows), "used-by row missing"
+assert any("actions.gather_food" in t for t in _rows), \
+    "berries should link the action that yields it"
+# click-through: jump from an item to the action that yields it
+viewer._jump_to("actions", "gather_food")
+assert ("actions", "gather_food") in viewer._blocks
+assert viewer.file_list.curselection() == (
+    list(CONTENT_FILES).index("actions"),)
+# economy sheet: berries obtainable, herbs flagged unobtainable
+viewer._show_view("economy")
+assert viewer.view == "economy"
+
+
+def _find_econ(name: str):
+    for node in viewer.economy_tree.get_children(""):
+        if viewer.economy_tree.item(node, "text") == name:
+            return node
+    return None
+
+
+_berries = _find_econ("berries")
+assert _berries is not None
+assert "bad" not in viewer.economy_tree.item(_berries, "tags")
+_src_parent = viewer.economy_tree.get_children(_berries)[0]
+assert any("gather_food" in viewer.economy_tree.item(c, "text")
+           for c in viewer.economy_tree.get_children(_src_parent)), \
+    "berries sources must list the gather action"
+_herbs = _find_econ("herbs")
+assert _herbs is not None and "bad" in viewer.economy_tree.item(
+    _herbs, "tags"), "herbs (no source) must be flagged"
 root.destroy()
 
 # 2) fixtures dir: visually distinct (banner flag + title tag)

@@ -170,6 +170,70 @@ SCHEMA: Dict[str, dict] = {
 }
 
 
+def collect_references(content: "Content") -> List[Tuple[str, str, str, str, str]]:
+    """(from_file, from_record, field, to_file, to_record) for every
+    schema-typed reference in the bundle: the cross-record graph behind the
+    viewer's uses/used-by links and item economy view, and the data 2c's
+    delete-blocking will need. Schema-driven, so the schema-drift tests keep
+    it complete as fields evolve. Field paths descend into nested records
+    (e.g. actions gather.item)."""
+    edges: List[Tuple[str, str, str, str, str]] = []
+    for fname, spec in SCHEMA.items():
+        data = getattr(content, fname)
+        if spec["kind"] == "flat":
+            records: List[Tuple[str, object]] = [("balance", data)]
+        elif spec["kind"] == "array":
+            records = [(str(rec.get("id", i)) if isinstance(rec, dict) else str(i),
+                        rec) for i, rec in enumerate(data)]
+        else:  # dict
+            records = [(str(k), v) for k, v in data.items()]
+        for rec_id, rec in records:
+            if isinstance(rec, dict):
+                _walk_refs(fname, rec_id, spec["fields"], rec, edges)
+    return edges
+
+
+def _walk_refs(fname: str, rec_id: str, fields: Dict, rec: Dict,
+               edges: List) -> None:
+    for field, fspec in fields.items():
+        _spec_edge(fname, rec_id, field, fspec, rec.get(field), edges)
+
+
+def _spec_edge(fname: str, rec_id: str, field: str, spec, value,
+               edges: List) -> None:
+    while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+        spec = spec[1]
+    if not isinstance(spec, tuple):
+        return
+    tag = spec[0]
+    if tag == "ref":
+        if isinstance(value, str):
+            edges.append((fname, rec_id, field, spec[1], value))
+    elif tag == "list":
+        if isinstance(value, list):
+            for item in value:
+                _spec_edge(fname, rec_id, field, spec[1], item, edges)
+    elif tag == "pair":
+        t1, t2 = spec[1], spec[2]
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            if isinstance(t1, tuple) and t1[0] == "ref" and isinstance(value[0], str):
+                edges.append((fname, rec_id, field, t1[1], value[0]))
+            if (isinstance(t2, tuple) and t2[0] == "dyn_ref"
+                    and isinstance(value[1], str) and isinstance(value[0], str)):
+                to_file = t2[1].get(value[0])
+                if to_file:
+                    edges.append((fname, rec_id, field, to_file, value[1]))
+    elif tag == "dict_int":
+        if isinstance(value, dict):
+            for key in value:
+                if isinstance(key, str):
+                    edges.append((fname, rec_id, field, spec[1], key))
+    elif tag == "nested":
+        if isinstance(value, dict) and isinstance(spec[1], dict):
+            for sub, sspec in spec[1].items():
+                _spec_edge(fname, rec_id, f"{field}.{sub}", sspec, value.get(sub), edges)
+
+
 class ContentError(Exception):
     """Content failed to load; `.problems` lists 'file: ...' messages."""
 
