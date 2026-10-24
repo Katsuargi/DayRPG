@@ -161,9 +161,27 @@ Ordered; phases have one concern each (a failure has one suspect).
   → add item `fish` → add `go_fishing` (behavior `gather_item`,
   same-session skill/item dropdowns, gather child form) → add
   `fishing_rod` with a tool_bonus pair → one Save-All → reload →
-  every link and the collect_references edge intact. Next: **2e** —
-  repair mode (parse-error line/column + raw text fallback) and
-  optional main.py launch integration (D3).
+  every link and the collect_references edge intact. **2e is done and
+  green — Phase 2 (the content editor) is COMPLETE**: per D4 (raw
+  pane deliberately deferred — correcting this line's earlier "raw
+  text fallback" wording, which contradicted the binding decision) the
+  repair flow is: parse errors carry STRUCTURED `.line`/`.column` on
+  Problem (derived by regex, message bytes untouched), the unusable
+  view lists the selected file's parse problems plus the flow hint,
+  **Open external** hands that file to the OS default editor, **Reload**
+  picks the fix up, and Save-All re-canonicalizes (D10 notice fires
+  for non-canonical external fixes). **Run check** spawns
+  check_live.py against the OPENED directory — check_live gained an
+  optional dir argument (no-arg default unchanged; the D6 spawn and
+  startup gate are unaffected) — waited on a worker thread and
+  reported via `root.after`, so the UI never blocks. D3 was already
+  decided (standalone; a later in-game button may spawn, never
+  import) — nothing else to build there. Acceptance green in
+  test_editor_gui: corrupt → structured line/column → open-external
+  (patched) → external fix → reload → edit → Save-All canonical →
+  `check_live.py <repaired-dir>` exits 0. Roadmap after Phase 2: the
+  deferred list above (effects registry, NPCs/merchants, Ren'Py port)
+  plus any viewer/editor nitpicks the user raises.
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

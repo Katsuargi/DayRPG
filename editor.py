@@ -13,7 +13,10 @@ as it joins the schema — no viewer code changes.
 from __future__ import annotations
 
 import copy
+import os
+import subprocess
 import sys
+import threading
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -85,6 +88,10 @@ class ContentViewer:
         self.status_label.pack(side="left")
         tk.Button(bar, text="Save-All", command=self._on_save).pack(
             side="right")
+        tk.Button(bar, text="Open external",
+                  command=self._on_open_external).pack(side="right")
+        tk.Button(bar, text="Run check",
+                  command=self._on_run_check).pack(side="right")
         tk.Button(bar, text="Reload",
                   command=self._on_reload_click).pack(side="right")
         views = tk.Frame(bar)
@@ -802,6 +809,93 @@ class ContentViewer:
             return
         self.root.destroy()
 
+    # --- 2e: repair flow (D4: line/column + open-external + reload) ---------
+
+    def _render_unusable(self, fname: str) -> None:
+        """Bundle-None view for one file: its parse problems (structured
+        line/column — D4) plus the repair flow. The raw pane stays
+        deferred: fix externally, Reload, Save-All re-canonicalizes."""
+        prefix = f"{fname}.json: "
+        mine = [prob for prob in self.problems
+                if getattr(prob, "file", None) == f"{fname}.json"]
+        if not mine:  # this file parses; another file blocks the set
+            tk.Label(self.records_frame, anchor="w", fg=MUTED_FG,
+                     text="this file parses — the set loads once the "
+                          "flagged file(s) are fixed (see Problems)",
+                     ).pack(fill="x", padx=12)
+            return
+        tk.Label(self.records_frame, anchor="w", fg=MUTED_FG,
+                 text="cannot render — the file set failed to parse",
+                 ).pack(fill="x", padx=12)
+        for prob in mine:
+            text = str(prob)
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+            tk.Label(self.records_frame, anchor="w", fg=ALERT_FG,
+                     text=f"    {text}").pack(fill="x", padx=12)
+        tk.Label(self.records_frame, anchor="w", fg=MUTED_FG,
+                 text="    repair: Open external (top bar) → edit in your "
+                      "OS default → Reload; Save-All then re-canonicalizes.",
+                 ).pack(fill="x", padx=12)
+
+    def _on_open_external(self) -> None:
+        """2e (D4): hand the SELECTED file to the OS default editor —
+        fix there, then Reload (D11 watches the disk change)."""
+        sel = self.file_list.curselection()
+        if not sel:
+            return
+        path = self.dir / f"{CONTENT_FILES[sel[0]]}.json"
+        if not path.exists():
+            messagebox.showinfo("Open external",
+                                f"{path.name} does not exist yet.")
+            return
+        try:
+            if hasattr(os, "startfile"):  # Windows
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+        except OSError as exc:
+            messagebox.showerror("Open external",
+                                 f"Could not open {path.name}: {exc}")
+
+    def _on_run_check(self) -> None:
+        """2e: spawn check_live.py against the OPENED directory (it
+        takes a directory argument now). The wait happens on a worker
+        thread — the UI never blocks."""
+        self.status_label.config(text="  check running…")
+        here = Path(__file__).resolve().parent
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, str(here / "check_live.py"), str(self.dir)],
+                cwd=str(here), stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True)
+        except OSError as exc:
+            self.status_label.config(text="  check failed to start")
+            messagebox.showerror("Run check", str(exc))
+            return
+
+        def _wait() -> None:
+            out = proc.communicate()[0] or ""
+            self.root.after(
+                0, lambda: self._check_done(proc.returncode, out))
+
+        threading.Thread(target=_wait, daemon=True).start()
+
+    def _check_done(self, code: int, out: str) -> None:
+        """Completion re-enters the UI thread; report via dialog
+        (patched headless in tests)."""
+        self.status_label.config(
+            text="  check: OK" if code == 0 else "  check: FAILED")
+        tail = out[-3000:]
+        if code == 0:
+            messagebox.showinfo("Run check",
+                                "check_live passed:\n\n" + tail)
+        else:
+            messagebox.showerror("Run check",
+                                 "check_live failed:\n\n" + tail)
+
     # --- rendering --------------------------------------------------------
 
     def _clear_records(self) -> None:
@@ -816,10 +910,7 @@ class ContentViewer:
         tk.Label(self.records_frame, anchor="w", font=(None, 10, "bold"),
                  text=f"{fname}.json").pack(fill="x", padx=4, pady=(4, 2))
         if self.bundle is None:
-            tk.Label(self.records_frame, anchor="w", fg=MUTED_FG,
-                     text="cannot render — the file set failed to parse "
-                          "(see Problems; fix in an external editor)"
-                     ).pack(fill="x", padx=12)
+            self._render_unusable(fname)
             return
         if self._pane_edit is not None and self._pane_edit[0] == fname:
             self._render_pane_edit(fname)

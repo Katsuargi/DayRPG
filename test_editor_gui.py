@@ -9,7 +9,9 @@ without crashing.
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -684,3 +686,103 @@ finally:
     shutil.rmtree(tmp3, ignore_errors=True)
 
 print("GUI smoke OK: 2d-ops dict ops + fishing pass")
+
+# --- 2e: repair flow (D4) — line/column, open-external, reload, run-check ---
+dialogued.clear()
+_real4 = {name: getattr(editor_mod.messagebox, name) for name in
+          ("showerror", "showinfo", "showwarning", "askyesno",
+           "askyesnocancel")}
+_real_startfile = getattr(os, "startfile", None)
+tmp4 = Path(tempfile.mkdtemp(prefix="forms4_"))
+try:
+    for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
+        shutil.copy(f, tmp4 / f.name)
+    for _n in ("showerror", "showinfo", "showwarning"):
+        setattr(editor_mod.messagebox, _n, _rec(_n))
+    editor_mod.messagebox.askyesno = _rec("askyesno", True)
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", True)
+
+    # corrupt items.json (missing comma → parse error with line/column)
+    ipath = tmp4 / "items.json"
+    good = ipath.read_bytes()
+    broken = good.replace(b'"id": "berries"', b'"id" "berries"', 1)
+    assert broken != good, "corruption must actually bite"
+    ipath.write_bytes(broken)
+
+    root4, viewer = build(tmp4)
+    assert viewer.bundle is None, "the set is unusable until repaired"
+    parse_probs = [p for p in viewer.problems if p.file == "items.json"]
+    assert parse_probs, viewer.problems
+    assert parse_probs[0].line is not None and \
+        parse_probs[0].column is not None, "structured line/column (D4)"
+
+    # the unusable view lists THIS file's problems and the repair flow
+    idx_i = list(CONTENT_FILES).index("items")
+    viewer.file_list.selection_set(idx_i)
+    viewer._render_file(idx_i)
+    labels = [str(w.cget("text")) for w in _walk(viewer.records_frame)
+              if w.winfo_class() == "Label"]
+    assert any("line" in t and "column" in t for t in labels), labels
+    assert any("repair:" in t for t in labels), labels
+
+    # Open external hands the SELECTED file to the OS default editor
+    _opened: list = []
+    if _real_startfile is not None:
+        os.startfile = lambda p: _opened.append(str(p))
+        viewer._on_open_external()
+        assert _opened and _opened[0].endswith("items.json"), _opened
+
+    # fix externally (slightly non-canonical) → Reload loads the set
+    ipath.write_bytes(good + b"\n")
+    viewer._on_reload_click()            # nothing dirty → no prompt
+    assert viewer.bundle is not None and viewer.problems == [], \
+        (viewer.bundle, viewer.problems)
+
+    # save path after repair: one edit → Save-All re-canonicalizes (D10)
+    viewer.file_list.selection_set(idx_i)
+    viewer._render_file(idx_i)
+    viewer._on_edit_toggle("items", "berries")
+    vform = viewer._forms[("items", "berries")]
+    vform.vars["tooltip"].set("Repaired batch.")
+    dialogued.clear()
+    viewer._on_save()
+    assert viewer.dirty == set(), viewer.dirty
+    assert any(d[0] == "showinfo" and "Reformatted" in str(d[1])
+               for d in dialogued), dialogued
+    disk = ipath.read_bytes()
+    assert b"Repaired batch." in disk and disk.endswith(b"\n") and \
+        not disk.endswith(b"\n\n"), "Save-All writes canonical bytes"
+    viewer.reload()
+    assert dict(viewer._records_of("items"))["berries"]["tooltip"] == \
+        "Repaired batch.", "the repaired+edited record round-trips"
+
+    # Run check: buttons exist, completion reports on the UI thread
+    bar_buttons = [str(w.cget("text")) for w in _walk(root4)
+                   if w.winfo_class() == "Button"]
+    assert "Run check" in bar_buttons and "Open external" in bar_buttons
+    dialogued.clear()
+    viewer._check_done(0, "check_live: OK (simulated)")
+    assert "OK" in str(viewer.status_label.cget("text"))
+    assert dialogued and dialogued[0][0] == "showinfo"
+    viewer._check_done(1, "problems everywhere")
+    assert "FAILED" in str(viewer.status_label.cget("text"))
+    assert dialogued[-1][0] == "showerror"
+
+    # THE acceptance: check_live against the REPAIRED directory
+    proc = subprocess.run(
+        [sys.executable, str(_ROOT / "check_live.py"), str(tmp4)],
+        capture_output=True, text=True, cwd=str(_ROOT), timeout=180)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    # clean close
+    dialogued.clear()
+    viewer._on_close()
+    assert not dialogued, "clean close must not prompt"
+finally:
+    for _n, _fn in _real4.items():
+        setattr(editor_mod.messagebox, _n, _fn)
+    if _real_startfile is not None:
+        os.startfile = _real_startfile
+    shutil.rmtree(tmp4, ignore_errors=True)
+
+print("GUI smoke OK: 2e repair flow + run-check")

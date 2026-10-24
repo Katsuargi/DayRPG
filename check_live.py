@@ -1,9 +1,12 @@
-"""Live-content gate for Day Scheduler RPG. Run: python check_live.py
+"""Live-content gate for Day Scheduler RPG.
+Run: python check_live.py [content_dir]
 
-Always judges the LIVE content/*.json — when run as a script it forces
-DAY_SCHEDULER_CONTENT_DIR to this project's content/ *before* anything
-imports game_core (the test suite pins that variable to its fixture and
-spawns this file as a child; the variable travels, so we overwrite it).
+When run as a script it forces DAY_SCHEDULER_CONTENT_DIR *before*
+anything imports game_core: an explicit directory argument wins — the
+editor's Run-check button (2e) checks the directory it has open —
+else this project's content/ (the test suite pins that variable to its
+fixture and spawns this file as a child; the variable travels, so we
+overwrite it).
 
 Exits 1 listing every problem when:
 - content/*.json fails the strict load (ContentError names file+field), or
@@ -22,13 +25,15 @@ import sys
 from pathlib import Path
 from typing import List
 
-# Force the live content directory before game_core can be imported
-# (game_core loads content at its own import time).
+# Force the content directory before game_core can be imported
+# (game_core loads content at its own import time). Argv wins so the
+# editor can check any opened directory; default stays the live files.
 if __name__ == "__main__":
     import os
 
     os.environ["DAY_SCHEDULER_CONTENT_DIR"] = str(
-        Path(__file__).resolve().parent / "content"
+        Path(sys.argv[1]).resolve() if len(sys.argv) > 1
+        else Path(__file__).resolve().parent / "content"
     )
 
 from content import ContentError

@@ -266,6 +266,11 @@ _PROBLEM_SHAPE = re.compile(
     r"^([A-Za-z0-9_]+\.json)(?:: '([^']+)')?(?:: '([^']+)')?"
 )
 
+#: Parse messages append "line N column M" (loader) — surfaced as
+#: structured attrs so the editor can display them without re-parsing
+#: the message text (2e / D4).
+_PROBLEM_LINECOL = re.compile(r"line (\d+) column (\d+)")
+
 
 class Problem(str):
     """A validation message with structure for editors.
@@ -273,7 +278,8 @@ class Problem(str):
     str(message) is byte-identical to what callers always appended, so
     every existing consumer (substring asserts, prints, ContentError)
     is untouched; `.file`, `.record_id`, `.field` are derived from the
-    message shape — consumers never re-parse text themselves.
+    message shape and `.line`/`.column` from a parse-error suffix —
+    consumers never re-parse text themselves.
     """
 
     def __new__(cls, message: str) -> "Problem":
@@ -282,6 +288,9 @@ class Problem(str):
         obj.file = match.group(1) if match else None
         obj.record_id = match.group(2) if match else None
         obj.field = match.group(3) if match else None
+        m2 = _PROBLEM_LINECOL.search(message)
+        obj.line = int(m2.group(1)) if m2 else None
+        obj.column = int(m2.group(2)) if m2 else None
         return obj
 
 
