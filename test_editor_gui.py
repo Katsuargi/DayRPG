@@ -46,6 +46,26 @@ assert str((_ROOT / "content").resolve()) in root.title()
 assert viewer.file_list.size() == len(CONTENT_FILES)
 assert ("items", "berries") in viewer._blocks  # schema-rendered record
 assert not viewer.fixtures
+
+# actions must show the gather block as sub-rows (incl. difficulty) —
+# this pins the opt-wrapper unwrap that once hid it in a raw dict string
+idx_actions = list(CONTENT_FILES).index("actions")
+viewer.file_list.selection_set(idx_actions)
+viewer._render_file(idx_actions)
+_texts: list[str] = []
+
+
+def _collect(widget) -> None:
+    if isinstance(widget, tk.Label):
+        _texts.append(str(widget.cget("text")))
+    for child in widget.winfo_children():
+        _collect(child)
+
+
+_collect(viewer.records_frame)
+assert "gather:" in [t.strip() for t in _texts], "nested block header missing"
+assert any(t.strip().endswith("difficulty") for t in _texts), \
+    "difficulty row missing under gather"
 root.destroy()
 
 # 2) fixtures dir: visually distinct (banner flag + title tag)

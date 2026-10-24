@@ -233,6 +233,10 @@ class ContentViewer:
     def _render_field(self, fname: str, field: str, spec, value,
                       depth: int = 1, missing: bool = False) -> None:
         pad = "  " * depth
+        # unwrap opt/nullable first so nested blocks (e.g. gather) render
+        # as sub-rows, not a raw dict string
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            spec = spec[1]
         if (isinstance(spec, tuple) and spec[0] == "nested"
                 and isinstance(value, dict)):
             tk.Label(self.records_frame, anchor="w", font=(None, 9, "italic"),
