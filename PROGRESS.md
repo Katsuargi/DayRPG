@@ -30,3 +30,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-23 | pre-2b housekeeping: edit-arrival wording (2c) + viewer sign-off recorded | f617cbf | test_smoke + test_editor_gui green
 - 2026-10-23 | Phase 2b headless write layer: save() D9/D10/D11 + test_content_write.py | 4ba24d3 | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-23 | Phase 2c hybrid forms: RecordForm seam, Save-All/guards, D5/D7 record ops | ddc52db | test_smoke + check_live + test_editor_gui + test_content_write green
+- 2026-10-23 | Phase 2d forms: layout flag/pane (D14-D15), nested/list/dict_int editors (D16), model-first tests (D17) | f026678 | test_smoke + check_live + test_editor_gui + test_content_write green
