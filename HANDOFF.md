@@ -108,8 +108,31 @@ Ordered; phases have one concern each (a failure has one suspect).
   atomic across files (git is net). Acceptance: `test_content_write.py`
   9 sections, spawned by test_smoke (D6). Loader side-effect: an
   invalid-UTF-8 file now yields a Problem instead of a crash (completes
-  constraint 1's "diagnose any file"). Next: **2c** — items.json forms
-  (dirty tracking + unsaved guard), saving through this layer.
+  constraint 1's "diagnose any file"). **2c is done and green** — hybrid
+  forms per the user's second-opinion round: records render read-only
+  by default; Edit mounts `RecordForm` (schema-driven widget mapping —
+  scalar/enum/ref/pair; hover-wheel returns "break" so scrolling over a
+  readonly Combobox can never change its value; edits write straight
+  into the bundle's record dicts, so display == saveable state). Dirty
+  = explicit stem set fed by edits → Save-All → `content.save()`;
+  unsaved guard on Reload/close ONLY (file switching is safe — edits
+  live in memory); D11 dialogs on StaleWriteError (overwrite /
+  reload-discard / cancel); live revalidation per keystroke refreshing
+  panels only (focus-safe). Record ops for array files: Add (schema
+  defaults, auto-opens editing, id slug-editable until first save),
+  Duplicate (appends, D5), ↑/↓ (D5 seed banner once per file), Delete
+  (D7 — blocked by the INCOMING `collect_references` edges: deletion
+  breaks whoever references you, not your own outbound refs). Fixed en
+  route: `ALERT_FG` was referenced but never defined (latent NameError)
+  and record-pane hover-scroll only bound at build time (rebinds after
+  every render now). Acceptance in `test_editor_gui.py` with dialogs
+  patched headless: edit→save→reload round-trip, bad edit blocks
+  naming the problem (bad start + empty name), fixture goldens
+  untouched. Master-detail layout + fat-record editors deferred to
+  **2d** — the RecordForm seam makes that a mount-point swap, not a
+  rewrite. Next: **2d** — forms for the remaining six files (actions
+  nested checks/gather, patterns materials dict, events list, skills/
+  stats dict keys, balance flat set).
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

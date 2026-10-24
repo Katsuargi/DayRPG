@@ -176,3 +176,184 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 print("GUI smoke OK: viewer (live, fixtures, broken)")
+
+# --- 2c: hybrid forms + Save-All through the 2b write layer ------------------
+import editor as editor_mod  # noqa: E402  (dialog seam: patchable, no modals)
+
+dialogued: list[tuple] = []
+_real = {name: getattr(editor_mod.messagebox, name) for name in
+         ("showerror", "showinfo", "showwarning", "askyesno",
+          "askyesnocancel")}
+
+
+def _rec(name, result=None):
+    def _fn(*args, **kwargs):
+        dialogued.append((name,) + args)
+        return result
+    return _fn
+
+
+def _walk(widget):
+    for child in widget.winfo_children():
+        yield child
+        yield from _walk(child)
+
+
+tmp = Path(tempfile.mkdtemp(prefix="forms_"))
+try:
+    for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
+        shutil.copy(f, tmp / f.name)
+    for _n in ("showerror", "showinfo", "showwarning"):
+        setattr(editor_mod.messagebox, _n, _rec(_n))
+    editor_mod.messagebox.askyesno = _rec("askyesno", True)
+
+    root, viewer = build(tmp)
+    idx_items = list(CONTENT_FILES).index("items")
+    viewer.file_list.selection_set(idx_items)
+    viewer._render_file(idx_items)
+
+    # read-only by default: no input widgets anywhere in the stack
+    _inputs = [w for w in _walk(viewer.records_frame)
+               if w.winfo_class() in ("Entry", "TEntry", "TCombobox")]
+    assert not _inputs, "viewer must stay read-only until Edit"
+
+    # Edit mounts the form; saved ids are locked (D7)
+    viewer._on_edit_toggle("items", "berries")
+    form = viewer._forms[("items", "berries")]
+    assert isinstance(form, editor_mod.RecordForm)
+    assert form.vars["id"].get() == "berries"
+    form.vars["id"].set("hacked")
+    assert viewer.bundle.items[0]["id"] == "berries", \
+        "saved ids must ignore edits (D7)"
+
+    # a name edit flows into the bundle, marks dirty, revalidates live
+    form.vars["name"].set("Wild Berries")
+    assert viewer.bundle.items[0]["name"] == "Wild Berries"
+    assert "items" in viewer.dirty
+
+    # a bad edit names its problem and blocks Save-All, disk untouched
+    before_items = (tmp / "items.json").read_bytes()
+    form.vars["start"].set("seven")
+    assert any("'start'" in p for p in viewer.problems), viewer.problems
+    dialogued.clear()
+    viewer._on_save()
+    assert dialogued and dialogued[0][0] == "showerror", dialogued
+    assert (tmp / "items.json").read_bytes() == before_items
+    assert "items" in viewer.dirty
+
+    # fixed → clean → save writes, dirty clears, reload round-trips
+    form.vars["start"].set("2")
+    assert viewer.problems == [], viewer.problems
+    viewer._on_save()
+    assert viewer.dirty == set(), viewer.dirty
+    saved = json.loads((tmp / "items.json").read_bytes())
+    assert saved[0]["name"] == "Wild Berries", "edit must round-trip"
+    viewer.reload()
+    assert viewer.bundle.items[0]["name"] == "Wild Berries"
+    assert ("items", "berries") not in viewer._unsaved_ids
+
+    # D7: referenced records refuse deletion; unreferenced ones confirm
+    dialogued.clear()
+    viewer._on_delete("items", "wood")
+    assert dialogued and dialogued[0][0] == "showerror", dialogued
+    assert any(r["id"] == "wood" for r in viewer.bundle.items)
+    # only the incoming-reference direction blocks a delete: pick an item
+    # nothing references (computed, not guessed)
+    _used = {(e[3], e[4]) for e in collect_references(viewer.bundle)}
+    _free = [r["id"] for r in viewer.bundle.items
+             if ("items", r["id"]) not in _used]
+    assert _free, "fixture must contain an unreferenced item"
+    editor_mod.messagebox.askyesno = _rec("askyesno", True)  # confirm
+    viewer._on_delete("items", _free[0])     # not referenced → deletes
+    assert not any(r["id"] == _free[0] for r in viewer.bundle.items)
+    editor_mod.messagebox.askyesno = _rec("askyesno", True)
+
+    # D5: reorder swaps, banners once per file
+    before_ids = [r["id"] for r in viewer.bundle.items]
+    dialogued.clear()
+    viewer._on_move("items", "wood", -1)
+    assert [r["id"] for r in viewer.bundle.items] == \
+        [before_ids[1], before_ids[0]] + before_ids[2:]
+    assert any(d[0] == "showinfo" and "Reorder" in d[1]
+               for d in dialogued), dialogued
+    dialogued.clear()
+    viewer._on_move("items", "wood", +1)     # back to original order
+    assert not any(d[0] == "showinfo" for d in dialogued), \
+        "the D5 banner fires once per file"
+    viewer._on_save()                        # settle the disk state
+    assert viewer.dirty == set()
+
+    # add: appends, opens for edit, id editable until first save (D7),
+    # and the empty name blocks Save-All naming the problem (constraint 3)
+    n_before = len(viewer.bundle.items)
+    viewer._on_add("items")
+    assert len(viewer.bundle.items) == n_before + 1
+    new_rec = viewer.bundle.items[-1]
+    assert new_rec["id"].startswith("new_item"), new_rec["id"]
+    assert ("items", new_rec["id"]) in viewer._editing
+    form2 = viewer._forms[("items", new_rec["id"])]
+    dialogued.clear()
+    viewer._on_save()
+    assert dialogued and dialogued[0][0] == "showerror", dialogued
+    form2.vars["id"].set("test_item")        # unsaved ids are editable
+    assert viewer.bundle.items[-1]["id"] == "test_item"
+    form2.vars["name"].set("Test Item")
+    assert viewer.problems == [], viewer.problems
+    viewer._on_save()
+    saved = json.loads((tmp / "items.json").read_bytes())
+    assert len(saved) == n_before + 1 and saved[-1]["id"] == "test_item"
+    assert saved[-1]["name"] == "Test Item"
+
+    # duplicate appends at the end (D5) — source from a survivor (the
+    # unreferenced item above may be gone)
+    _src = viewer.bundle.items[0]["id"]
+    viewer._on_duplicate("items", _src)
+    assert viewer.bundle.items[-1]["id"] == f"{_src}_copy"
+    assert "items" in viewer.dirty
+
+    # unsaved guard: CANCEL stays put, DISCARD reloads clean (D11 paths)
+    dialogued.clear()
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", None)
+    viewer._on_reload_click()
+    assert dialogued and dialogued[0][0] == "askyesnocancel"
+    assert "items" in viewer.dirty, "CANCEL must not throw edits away"
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", False)
+    viewer._on_reload_click()
+    assert viewer.dirty == set() and \
+        viewer.bundle.items[-1]["id"] != f"{_src}_copy", "discard = reload"
+
+    # D11 stale: disk changed under us → CANCEL writes nothing,
+    # confirmed overwrite wins
+    viewer.file_list.selection_set(idx_items)
+    viewer._render_file(idx_items)
+    viewer._on_edit_toggle("items", "berries")
+    form3 = viewer._forms[("items", "berries")]
+    form3.vars["name"].set("Stale Test")
+    external = json.loads((tmp / "items.json").read_bytes())
+    external[0]["tooltip"] = "external edit"
+    (tmp / "items.json").write_bytes(
+        (json.dumps(external, ensure_ascii=False, indent=2)
+         + "\n").encode("utf-8"))
+    dialogued.clear()
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", None)
+    viewer._on_save()
+    assert dialogued and dialogued[0][0] == "askyesnocancel"
+    assert b"external edit" in (tmp / "items.json").read_bytes(), \
+        "CANCEL must leave the external change alone"
+    assert "items" in viewer.dirty
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", True)
+    viewer._on_save()
+    saved = json.loads((tmp / "items.json").read_bytes())
+    assert saved[0]["name"] == "Stale Test", "overwrite wins (D11)"
+    assert viewer.dirty == set()
+
+    # close with nothing unsaved: no dialog, straight out
+    dialogued.clear()
+    viewer._on_close()
+    assert not dialogued, "clean close must not prompt"
+finally:
+    for _n, _fn in _real.items():
+        setattr(editor_mod.messagebox, _n, _fn)
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("GUI smoke OK: 2c forms, save, guards")

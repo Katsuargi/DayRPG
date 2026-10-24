@@ -1,26 +1,31 @@
 """Read-only content viewer (Phase 2a). Run: python editor.py [content_dir]
 
 Imports the content layer ONLY — never game_core (constraint 1) — so it
-opens and diagnoses whatever the game refuses to load. Read-only by
-design: this module contains no write code; the write layer (2b) is
-headless, and editing arrives with the 2c forms. Every field of every file renders from content.SCHEMA
+opens and diagnoses whatever the game refuses to load. Hybrid by design
+(2c): read-only by default (the viewer you browse), each record opened
+for editing with a schema-driven form; all writes go through
+content.save() — this module holds no write primitives of its own.
+Every field of every file renders from content.SCHEMA
 (D1), so a future content type (NPCs, merchants, ...) appears as soon
 as it joins the schema — no viewer code changes.
 """
 
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
-from content import (CONTENT_FILES, SCHEMA, collect_references,
-                     try_load_content)
+from content import (CONTENT_FILES, SCHEMA, collect_references, ContentError,
+                     StaleWriteError, save, try_load_content_with_state,
+                     validate_bundle)
 
 BANNER_BG = "#8b1a1a"
 FLASH_BG = "#ffe39a"
 MUTED_FG = "#666677"
+ALERT_FG = "#b00020"
 
 
 class ContentViewer:
@@ -43,6 +48,17 @@ class ContentViewer:
         self._blocks: dict[tuple[str, str], tk.Widget] = {}
         self._ref_out: dict = {}
         self._ref_in: dict = {}
+        # 2c editing state: D9/D11 load facts, dirty stems (the Save-All
+        # input), records open in form mode, ids not yet on disk (D7:
+        # still slug-editable), plus reorder-banner bookkeeping.
+        self._state = None
+        self.dirty: set[str] = set()
+        self._editing: set[tuple[str, str]] = set()
+        self._unsaved_ids: set[tuple[str, str]] = set()
+        self._reorder_warned: set[str] = set()
+        self._forms: dict[tuple[str, str], "RecordForm"] = {}
+        self._current_idx = 0
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_widgets()
         self.reload()
 
@@ -60,9 +76,12 @@ class ContentViewer:
         bar.pack(fill="x", padx=8, pady=(6, 2))
         tk.Label(bar, text=str(self.dir), anchor="w", fg=MUTED_FG).pack(
             side="left")
-        tk.Label(bar, text="  read-only (2a) — editing arrives with 2c",
-                 anchor="w", fg=MUTED_FG).pack(side="left")
-        tk.Button(bar, text="Reload", command=self.reload).pack(side="right")
+        self.status_label = tk.Label(bar, anchor="w", fg=MUTED_FG)
+        self.status_label.pack(side="left")
+        tk.Button(bar, text="Save-All", command=self._on_save).pack(
+            side="right")
+        tk.Button(bar, text="Reload",
+                  command=self._on_reload_click).pack(side="right")
         views = tk.Frame(bar)
         views.pack(side="right", padx=(0, 8))
         self.btn_files = tk.Button(
@@ -134,8 +153,12 @@ class ContentViewer:
         for child in widget.winfo_children():
             self._bind_scroll(child)
 
-    def _on_mousewheel(self, event) -> None:
+    def _on_mousewheel(self, event) -> str:
         self.records_canvas.yview_scroll(-1 * (event.delta // 120), "units")
+        # Stop class bindings: a readonly Combobox under the cursor would
+        # otherwise change value while the user merely scrolls — hover
+        # over any form widget must never edit anything.
+        return "break"
 
     # --- tunables view (wholesale balance review, one screen) -------------
 
@@ -330,7 +353,16 @@ class ContentViewer:
     # --- data ------------------------------------------------------------
 
     def reload(self) -> None:
-        self.bundle, self.problems = try_load_content(self.dir)
+        # One read yields bundle + D9 baseline + D11 hashes; a reload
+        # also clears every editing flag — nothing unsaved survives it
+        # (the button path asks first, this method is the bare reset).
+        self.bundle, self._state = try_load_content_with_state(self.dir)
+        self.problems = list(self._state.problems)
+        self.dirty.clear()
+        self._editing.clear()
+        self._unsaved_ids.clear()
+        self._reorder_warned.clear()
+        self._forms.clear()
         self._rebuild()
 
     def _records_of(self, fname: str) -> list[tuple[str, dict]]:
@@ -356,7 +388,11 @@ class ContentViewer:
             pass
         return f"{value} ⚠"
 
-    def _rebuild(self) -> None:
+    def _refresh_lists(self) -> None:
+        """Rewrite file rows (dirty ● + problem counts) and the problem
+        list. Keystroke-safe: it never touches the records pane, so an
+        open form keeps its focus while live validation runs."""
+        keep = self.file_list.curselection()
         self.file_list.delete(0, "end")
         per_file: dict[str, int] = {}
         for prob in self.problems:
@@ -368,16 +404,27 @@ class ContentViewer:
             else:
                 summary = f"{len(self._records_of(fname))} records"
             bad = per_file.get(f"{fname}.json", 0)
+            mark = "● " if fname in self.dirty else "  "
             self.file_list.insert(
                 "end",
-                f"{fname:<9} {summary}" + (f"  ⚠{bad}" if bad else ""),
+                f"{mark}{fname:<9} {summary}" + (f"  ⚠{bad}" if bad else ""),
             )
+        if keep:
+            self.file_list.selection_set(keep[0])
         self.problems_list.delete(0, "end")
         if not self.problems:
             self.problems_list.insert("end", "✓ no problems")
         for prob in self.problems:
             owner = getattr(prob, "file", None) or "engine"
             self.problems_list.insert("end", f"{owner}: {prob}")
+        if self.dirty:
+            self.status_label.config(
+                text="  unsaved: " + ", ".join(sorted(self.dirty)))
+        else:
+            self.status_label.config(text="  no unsaved changes")
+
+    def _rebuild(self) -> None:
+        self._refresh_lists()
         self.file_list.selection_set(0)
         self._build_refs()      # graph indexes must exist before rendering
         self._render_file(0)
@@ -420,6 +467,255 @@ class ContentViewer:
             except tk.TclError:
                 pass
 
+    # --- 2c editing: record ops, save, guards --------------------------------
+
+    def _record_buttons(self, fname: str, rec_id: str, ops: bool) -> None:
+        """Edit/Done toggle (the hybrid mount switch) plus array-record
+        operations (D5 reorder, D7 duplicate/delete)."""
+        bar = tk.Frame(self.records_frame)
+        bar.pack(fill="x", padx=8)
+        tk.Button(
+            bar, text="Done" if (fname, rec_id) in self._editing
+            else "Edit", width=6,
+            command=lambda: self._on_edit_toggle(fname, rec_id),
+        ).pack(side="left")
+        if ops:
+            recs = self._records_of(fname)
+            pos = next(i for i, (rid, _r) in enumerate(recs)
+                       if rid == rec_id)
+            tk.Button(bar, text="Duplicate", width=9,
+                      command=lambda: self._on_duplicate(fname,
+                                                         rec_id)).pack(
+                side="left", padx=(8, 2))
+            tk.Button(
+                bar, text="↑", width=2,
+                state="disabled" if pos == 0 else "normal",
+                command=lambda: self._on_move(fname, rec_id, -1),
+            ).pack(side="left", padx=1)
+            tk.Button(
+                bar, text="↓", width=2,
+                state="disabled" if pos == len(recs) - 1 else "normal",
+                command=lambda: self._on_move(fname, rec_id, +1),
+            ).pack(side="left", padx=1)
+            tk.Button(bar, text="Delete", width=7,
+                      command=lambda: self._on_delete(fname, rec_id)).pack(
+                side="left", padx=(8, 2))
+
+    def _on_edit_toggle(self, fname: str, rec_id: str) -> None:
+        key = (fname, rec_id)
+        if key in self._editing:
+            self._editing.discard(key)
+            self._forms.pop(key, None)
+        else:
+            self._editing.add(key)
+        self._render_file(self._current_idx)
+
+    def _next_id(self, fname: str, base: str) -> str:
+        existing = {rid for rid, _ in self._records_of(fname)}
+        candidate, n = base, 1
+        while candidate in existing:
+            n += 1
+            candidate = f"{base}_{n}"
+        return candidate
+
+    def _default_record(self, fname: str, rec_id: str) -> dict:
+        """Schema-driven defaults: id = suggested slug, string = "",
+        int/number = 0, bool = False; optional and exotic fields start
+        absent — the form and validation finish the job (a half-filled
+        record blocks Save-All naming its problems, per constraint 3)."""
+        rec: dict = {}
+        for field, fspec in SCHEMA[fname]["fields"].items():
+            spec = fspec
+            optional = False
+            while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+                optional = optional or spec[0] == "opt"
+                spec = spec[1]
+            if optional or not isinstance(spec, str):
+                continue  # absent optional; pair/ref/nested start unset
+            if spec == "slug":
+                rec[field] = rec_id
+            elif spec == "string":
+                rec[field] = ""
+            elif spec in ("int", "number"):
+                rec[field] = 0
+            elif spec == "bool":
+                rec[field] = False
+        return rec
+
+    def _mark_dirty(self, fname: str) -> None:
+        """Any in-memory change: mark, revalidate live, refresh the
+        panels — never the records pane (open forms keep focus)."""
+        self.dirty.add(fname)
+        self.problems = list(validate_bundle(self.bundle))
+        self._refresh_lists()
+
+    def _on_add(self, fname: str) -> None:
+        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+            return
+        base = "new_" + (fname[:-1] if fname.endswith("s") else fname)
+        rec_id = self._next_id(fname, base)
+        getattr(self.bundle, fname).append(
+            self._default_record(fname, rec_id))
+        self._unsaved_ids.add((fname, rec_id))
+        self._editing.add((fname, rec_id))  # a new record opens for edit
+        self._mark_dirty(fname)
+        self._render_file(self._current_idx)
+
+    def _on_duplicate(self, fname: str, rec_id: str) -> None:
+        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+            return
+        source = next((r for rid, r in self._records_of(fname)
+                       if rid == rec_id), None)
+        if source is None:
+            return
+        new_id = self._next_id(fname, f"{rec_id}_copy")
+        new_rec = copy.deepcopy(source)
+        if isinstance(new_rec, dict) and "id" in new_rec:
+            new_rec["id"] = new_id
+        getattr(self.bundle, fname).append(new_rec)  # D5: appends at end
+        self._unsaved_ids.add((fname, new_id))
+        self._mark_dirty(fname)
+        self._render_file(self._current_idx)
+
+    def _on_move(self, fname: str, rec_id: str, delta: int) -> None:
+        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+            return
+        recs = getattr(self.bundle, fname)
+        ids = [rid for rid, _ in self._records_of(fname)]
+        if rec_id not in ids:
+            return
+        pos = ids.index(rec_id)
+        target = pos + delta
+        if not 0 <= target < len(recs):
+            return
+        recs[pos], recs[target] = recs[target], recs[pos]
+        if fname not in self._reorder_warned:  # D5 banner, once per file
+            self._reorder_warned.add(fname)
+            messagebox.showinfo(
+                "Reorder shifts the seeds",
+                "Record order is display order AND seeded-RNG input.\n"
+                "Seeded results will shift — if engine tests should "
+                "notice,\nre-pin the fixture deliberately (DEV_GUIDE: "
+                "Testing workflow).")
+        self._mark_dirty(fname)
+        self._render_file(self._current_idx)
+
+    def _on_delete(self, fname: str, rec_id: str) -> None:
+        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+            return
+        # incoming edges only: deleting breaks whoever REFERENCES this
+        # record (its own outgoing refs die with it — not a blocker)
+        edges = [e for e in collect_references(self.bundle)
+                 if e[3] == fname and e[4] == rec_id]
+        if edges:  # D7: referenced records cannot be deleted
+            listing = "\n".join(f"    {e[0]}.{e[1]} — {e[2]}"
+                                for e in edges)
+            messagebox.showerror(
+                f"{rec_id} is still in use",
+                "Delete blocked — these content records reference it:\n"
+                + listing)
+            return
+        if not messagebox.askyesno(
+                "Delete record",
+                f"Remove {fname}.{rec_id} from the in-memory set?\n"
+                "It reaches disk only when you Save-All."):
+            return
+        recs = getattr(self.bundle, fname)
+        ids = [rid for rid, _ in self._records_of(fname)]
+        if rec_id in ids:
+            recs.pop(ids.index(rec_id))
+        self._unsaved_ids.discard((fname, rec_id))
+        self._editing.discard((fname, rec_id))
+        self._forms.pop((fname, rec_id), None)
+        self._mark_dirty(fname)
+        self._render_file(self._current_idx)
+
+    def _on_save(self) -> None:
+        """Save-All (D9): stage every dirty file, gate, temp→replace."""
+        if self.bundle is None:
+            messagebox.showerror(
+                "Nothing to save",
+                "The file set failed to parse — fix the problems first.")
+            return
+        if not self.dirty:
+            messagebox.showinfo("Save", "No unsaved changes.")
+            return
+        self._save_through()
+
+    def _save_through(self, overwrite: bool = False) -> bool:
+        ordered = [n for n in CONTENT_FILES if n in self.dirty]
+        try:
+            result = save(self.bundle, self.dir, state=self._state,
+                          dirty=ordered, overwrite_stale=overwrite)
+        except StaleWriteError as exc:
+            choice = messagebox.askyesnocancel(  # D11 dirty-buffer paths
+                "Changed on disk",
+                "These files changed on disk since you loaded them:\n  "
+                + ", ".join(f"{f}.json" for f in exc.files)
+                + "\n\nYES = overwrite the disk changes"
+                  "\nNO = discard your changes and reload"
+                  "\nCANCEL = keep editing, save nothing")
+            if choice is True:
+                return self._save_through(overwrite=True)
+            if choice is False:
+                self.reload()
+            return choice is not None
+        except ContentError as exc:
+            messagebox.showerror(
+                "Save blocked",
+                "The edit would make the problem count worse — nothing "
+                "was written. Fix these first:\n  "
+                + "\n  ".join(str(p) for p in exc.problems))
+            return False
+        for fname in result.written:
+            self.dirty.discard(fname)
+            for key in [k for k in self._unsaved_ids if k[0] == fname]:
+                self._unsaved_ids.discard(key)  # on disk: D7 locks it
+        # the write moved disk under us — refresh D9 baseline + D11 hashes
+        _, self._state = try_load_content_with_state(self.dir)
+        self.problems = list(validate_bundle(self.bundle))
+        if result.skipped:
+            messagebox.showwarning(
+                "Saved, with skips",
+                "Not written (still have problems of their own):\n  "
+                + ", ".join(f"{f}.json" for f in result.skipped)
+                + "\n  Every other dirty file was saved.")
+        if result.reformatted:
+            messagebox.showinfo(
+                "Reformatted",
+                "Saved, but these files weren't canonical (CRLF / odd "
+                "indentation / BOM), so their formatting was rewritten "
+                "(D10):\n  "
+                + ", ".join(f"{f}.json" for f in result.reformatted))
+        self._refresh_lists()
+        self._render_file(self._current_idx)  # id locks refresh
+        return True
+
+    def _confirm_discard(self) -> bool:
+        """The unsaved-changes guard: save / discard / cancel. True means
+        the caller may proceed (either saved, or discard was chosen)."""
+        if not self.dirty:
+            return True
+        choice = messagebox.askyesnocancel(
+            "Unsaved changes",
+            "Unsaved: " + ", ".join(sorted(self.dirty))
+            + "\n\nYES = save first\nNO = discard them\nCANCEL = stay")
+        if choice is None:
+            return False
+        if choice is True:
+            return self._save_through()
+        return True  # discard — the caller's reload/close re-reads disk
+
+    def _on_reload_click(self) -> None:
+        if not self._confirm_discard():
+            return
+        self.reload()
+
+    def _on_close(self) -> None:
+        if not self._confirm_discard():
+            return
+        self.root.destroy()
+
     # --- rendering --------------------------------------------------------
 
     def _clear_records(self) -> None:
@@ -429,6 +725,7 @@ class ContentViewer:
 
     def _render_file(self, index: int) -> None:
         self._clear_records()
+        self._current_idx = index
         fname = CONTENT_FILES[index]
         tk.Label(self.records_frame, anchor="w", font=(None, 10, "bold"),
                  text=f"{fname}.json").pack(fill="x", padx=4, pady=(4, 2))
@@ -438,14 +735,24 @@ class ContentViewer:
                           "(see Problems; fix in an external editor)"
                      ).pack(fill="x", padx=12)
             return
+        if SCHEMA[fname].get("kind") == "array":
+            tk.Button(self.records_frame, text="+ add record",
+                      command=lambda f=fname: self._on_add(f)).pack(
+                anchor="e", padx=8, pady=(0, 2))
         for rec_id, rec in self._records_of(fname):
             self._render_record(fname, rec_id, rec)
+        # rows/forms are rebuilt constantly — rebind hover-scroll (and its
+        # wheel "break" guard) onto every widget just created
+        self._bind_scroll(self.records_frame)
 
     def _render_record(self, fname: str, rec_id: str, rec) -> None:
         header = tk.Label(self.records_frame, anchor="w", bg="#e8e8f0",
                           font=(None, 9, "bold"), text=f"  {rec_id}")
         header.pack(fill="x", padx=4, pady=(6, 1))
         self._blocks[(fname, rec_id)] = header
+        if self.bundle is not None and isinstance(rec, dict):
+            self._record_buttons(fname, rec_id,
+                                 SCHEMA[fname].get("kind") == "array")
         self._render_ref_rows(fname, rec_id)
         if not isinstance(rec, dict):  # invalid data must still render
             tk.Label(self.records_frame, anchor="w", fg=ALERT_FG,
@@ -453,9 +760,14 @@ class ContentViewer:
                                                               padx=12)
             return
         spec = SCHEMA[fname]["fields"]
-        for field, fspec in spec.items():
-            self._render_field(fname, field, fspec, rec.get(field),
-                               depth=1, missing=field not in rec)
+        if (fname, rec_id) in self._editing:
+            self._forms[(fname, rec_id)] = RecordForm(
+                self, self.records_frame, fname, rec_id, rec, spec)
+        else:
+            self._forms.pop((fname, rec_id), None)
+            for field, fspec in spec.items():
+                self._render_field(fname, field, fspec, rec.get(field),
+                                   depth=1, missing=field not in rec)
 
     def _render_field(self, fname: str, field: str, spec, value,
                       depth: int = 1, missing: bool = False) -> None:
@@ -526,6 +838,198 @@ class ContentViewer:
             return str(value) + ("" if isinstance(value, dict)
                                  else " ⚠ not an object")
         return str(value)
+
+
+class RecordForm:
+    """Schema-driven editor for one record — the 2c seam.
+
+    Draws one widget per content.SCHEMA field into `parent` and writes
+    every edit straight into the in-memory record (the bundle's own
+    dict), so displayed state and saveable state are the same object.
+    The viewer mounts it inline inside a record block; a later layout
+    (2d detail pane) can mount this same component elsewhere without
+    changing it. Traces attach after the initial values, so mounting
+    never reports itself as an edit.
+    """
+
+    def __init__(self, viewer: ContentViewer, parent: tk.Widget,
+                 fname: str, rec_id: str, record: dict, spec: dict):
+        self.viewer = viewer
+        self.fname = fname
+        self.rec_id = rec_id
+        self.record = record
+        self.vars: dict[str, tk.Variable] = {}
+        editable_id = (fname, rec_id) in viewer._unsaved_ids  # D7
+        for field, fspec in spec.items():
+            self._add_field(parent, field, fspec, record.get(field),
+                            field in record, editable_id=editable_id)
+
+    def _add_field(self, parent, field, fspec, value, present, *,
+                   editable_id=False) -> None:
+        was_opt = False
+        spec = fspec
+        while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+            was_opt = was_opt or spec[0] == "opt"
+            spec = spec[1]
+        row = tk.Frame(parent)
+        row.pack(fill="x", padx=8)
+        tk.Label(row, anchor="w", fg=MUTED_FG, text=f"    {field}",
+                 width=12).pack(side="left")
+        if isinstance(spec, str) and spec in ("slug", "string", "int",
+                                              "bool", "number"):
+            if editable_id and field == "id":
+                self._add_new_id(row, value)
+            else:
+                self._add_scalar(row, field, spec, value, was_opt,
+                                 readonly=(field == "id"))
+            return
+        if isinstance(spec, tuple) and spec[0] == "enum":
+            self._add_combo(row, field, list(spec[1]), value)
+            return
+        if isinstance(spec, tuple) and spec[0] == "ref":
+            self._add_combo(row, field, self._ref_ids(spec[1]), value)
+            return
+        if isinstance(spec, tuple) and spec[0] == "pair":
+            self._add_pair(row, field, spec, value, was_opt)
+            return
+        # nested / list / dyn_ref / dict_int: shown read-only until their
+        # 2d editors land — never silently hidden
+        if not present:
+            text = "— absent"
+        elif value is None:
+            text = "— null"
+        else:
+            text = self.viewer._value_text(fspec, value, self.fname)
+        tk.Label(row, anchor="w", text=text).pack(side="left")
+        tk.Label(row, anchor="w", fg=MUTED_FG,
+                 text="  (not editable yet — 2d)").pack(side="left")
+
+    def _add_scalar(self, row, field, kind, value, was_opt, *,
+                    readonly=False) -> None:
+        text = "" if value is None else str(value)
+        var = tk.StringVar(value=text)
+        tk.Entry(row, textvariable=var, width=52 if kind == "string"
+                 else 14, state="readonly" if readonly else "normal").pack(
+            side="left", fill="x", expand=True)
+        self.vars[field] = var
+        if readonly:
+            return  # D7: ids of saved records never change through us
+
+        def on_change(*_a, _k=kind, _f=field, _o=was_opt):
+            raw = var.get()
+            if _o and raw == "":
+                self.record.pop(_f, None)  # cleared optional = absent
+            else:
+                self.record[_f] = self._coerce(_k, raw)
+            self._changed()
+        var.trace_add("write", on_change)
+
+    def _add_new_id(self, row, value) -> None:
+        var = tk.StringVar(value="" if value is None else str(value))
+        tk.Entry(row, textvariable=var, width=30).pack(side="left")
+        self.vars["id"] = var
+
+        def on_change(*_a, _v=var):
+            self._write_new_id(_v.get())
+        var.trace_add("write", on_change)
+
+    def _write_new_id(self, new: str) -> None:
+        """D7: a not-yet-saved record's id stays editable — retarget the
+        bookkeeping sets so an unsaved record never gets id-locked."""
+        viewer = self.viewer
+        old_key, new_key = (self.fname, self.rec_id), (self.fname, new)
+        self.record["id"] = new
+        self.rec_id = new
+        if old_key in viewer._unsaved_ids:
+            viewer._unsaved_ids.discard(old_key)
+            viewer._unsaved_ids.add(new_key)
+        if old_key in viewer._editing:
+            viewer._editing.discard(old_key)
+            viewer._editing.add(new_key)
+        if old_key in viewer._forms:
+            viewer._forms[new_key] = viewer._forms.pop(old_key)
+        self._changed()
+
+    def _add_combo(self, row, field, values, value) -> None:
+        var = tk.StringVar(value="" if value is None else str(value))
+        ttk.Combobox(row, textvariable=var, values=values, width=50,
+                     state="readonly").pack(side="left", fill="x",
+                                            expand=True)
+        self.vars[field] = var
+
+        def on_change(*_a, _f=field):
+            self.record[_f] = var.get()
+            self._changed()
+        var.trace_add("write", on_change)
+
+    def _add_pair(self, row, field, spec, value, was_opt) -> None:
+        left_spec, right_spec = spec[1], spec[2]
+        while isinstance(right_spec, tuple) and right_spec[0] in (
+                "opt", "nullable"):
+            right_spec = right_spec[1]
+        rkind = right_spec if isinstance(right_spec, str) else "string"
+        seq = (value if isinstance(value, (list, tuple)) and len(value) == 2
+               else (None, None))
+        var_l = tk.StringVar(value="" if seq[0] is None else str(seq[0]))
+        var_r = tk.StringVar(value="" if seq[1] is None else str(seq[1]))
+        sub = left_spec
+        while isinstance(sub, tuple) and sub[0] in ("opt", "nullable"):
+            sub = sub[1]
+        if isinstance(sub, tuple) and sub[0] == "ref":
+            ttk.Combobox(row, textvariable=var_l, state="readonly",
+                         values=self._ref_ids(sub[1]), width=32).pack(
+                side="left")
+        else:
+            tk.Entry(row, textvariable=var_l, width=24).pack(side="left")
+        tk.Label(row, text="·").pack(side="left", padx=3)
+        tk.Entry(row, textvariable=var_r, width=7).pack(side="left")
+
+        def on_change(*_a, _f=field, _l=var_l, _r=var_r, _k=rkind,
+                      _o=was_opt):
+            left, right = _l.get(), _r.get()
+            if _o and left == "" and right == "":
+                self.record.pop(_f, None)  # cleared optional pair
+            else:
+                self.record[_f] = [left, self._coerce(_k, right)]
+            self._changed()
+        var_l.trace_add("write", on_change)
+        var_r.trace_add("write", on_change)
+
+    # --- helpers -----------------------------------------------------------
+
+    @staticmethod
+    def _coerce(kind: str, raw: str):
+        """Text -> declared type; unparseable text is kept as typed so
+        validate_bundle names the bad edit (constraint 3, verbatim)."""
+        if kind == "int":
+            try:
+                return int(raw)
+            except ValueError:
+                return raw
+        if kind == "number":
+            try:
+                return float(raw)
+            except ValueError:
+                return raw
+        if kind == "bool":
+            if raw in ("True", "true"):
+                return True
+            if raw in ("False", "false"):
+                return False
+            return raw
+        return raw  # slug / string
+
+    def _ref_ids(self, target: str) -> list[str]:
+        """D12: options resolve from the in-memory bundle, so records
+        added this session are selectable immediately."""
+        if self.viewer.bundle is None:
+            return []
+        return [str(rid) for rid, _ in self.viewer._records_of(target)]
+
+    def _changed(self) -> None:
+        self.viewer.dirty.add(self.fname)
+        self.viewer.problems = list(validate_bundle(self.viewer.bundle))
+        self.viewer._refresh_lists()
 
 
 def main(argv: list[str]) -> int:
