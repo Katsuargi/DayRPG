@@ -159,14 +159,19 @@ Ordered; phases have one concern each (a failure has one suspect).
 
 ## How this collaboration works best
 
-- **Committed-file drift (2026-10-23):** an invisible continuation had
-  silently rewritten editor.py (pane-based views, `try_load_content`
-  loader) and the change was already COMMITTED — memory of the file's
-  *text* was stale, so 7 old_text edits failed "not found" and one
-  blind insert broke the file (caught by the suite). Rule: before
-  editing any file you believe is untouched, `git diff HEAD -- <file>`
-  and grep the current text; edit what IS there, never what you
-  remember.
+- **Context-rollover amnesia, not a ghost (2026-10-23, corrected):**
+  the context window hit cap mid-session (around the tunables turn) and
+  rolled over; the committed editor.py/content.py work that post-rollover
+  me "didn't remember" was my own pre-rollover work, initially
+  mislabeled as an "invisible continuation" rewrite. The user saw NO
+  error — that's the tell distinguishing this from the genuine
+  lost-response incident (visible client failure) below, whose rule
+  still stands. Tell-tale here: the "unexpected" changes were coherent,
+  on-plan, convention-matching work. Rule: when committed state
+  surprises you, suspect your own lost memory FIRST — ground-truth with
+  `git diff HEAD -- <file>` + grep, treat git and the suite as the only
+  authorities, and verify rather than theorize (summaries written at a
+  rollover boundary may misattribute the work too).
 - **Timeout lesson:** two prior runs died at ~2435s, both inside single
   huge thinking blocks before any file write. What worked: lean
   thinking, small batched edits (keep tool inputs modest, ~6k chars),
