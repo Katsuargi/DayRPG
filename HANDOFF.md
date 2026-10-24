@@ -87,10 +87,16 @@ Ordered; phases have one concern each (a failure has one suspect).
   from the `content.py` SCHEMA (`order_sensitive` + ref/dyn_ref
   types), problems click through to records, the fixtures directory
   is flagged, schema drift is pinned by mutation loops in test_smoke,
-  and editor.py holds no write code (grep-verified). Next: 2b —
-  headless write layer (D9 Save-All, D11 stale guard, D10 canonical
-  form, `test_content_write.py`). The user wants to nitpick viewer
-  UX before forms build on it.
+  and editor.py holds no write code (grep-verified). **Viewer UX signed
+  off (2026-10-23):** click-throughs work, economy tab approved, no
+  mechanical adjustments wanted at this stage. Next: 2b — headless
+  write layer (D9 Save-All, D11 stale guard, D10 canonical form,
+  `test_content_write.py`). First 2b design decision: how D11's
+  per-file hash-at-load reaches the caller (extend `try_load_content`'s
+  return — ripples through test_smoke's call sites — vs. a parallel
+  `load_with_hashes` wrapper). Writer care point: open with
+  `newline="\n"` or Windows CRLF fights `.gitattributes` (eol=lf) and
+  breaks byte-stability.
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

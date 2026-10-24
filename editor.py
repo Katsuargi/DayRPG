@@ -2,8 +2,8 @@
 
 Imports the content layer ONLY — never game_core (constraint 1) — so it
 opens and diagnoses whatever the game refuses to load. Read-only by
-design: this module contains no write code; editing arrives with the
-write layer (2b). Every field of every file renders from content.SCHEMA
+design: this module contains no write code; the write layer (2b) is
+headless, and editing arrives with the 2c forms. Every field of every file renders from content.SCHEMA
 (D1), so a future content type (NPCs, merchants, ...) appears as soon
 as it joins the schema — no viewer code changes.
 """
@@ -60,7 +60,7 @@ class ContentViewer:
         bar.pack(fill="x", padx=8, pady=(6, 2))
         tk.Label(bar, text=str(self.dir), anchor="w", fg=MUTED_FG).pack(
             side="left")
-        tk.Label(bar, text="  read-only (2a) — editing arrives with 2b",
+        tk.Label(bar, text="  read-only (2a) — editing arrives with 2c",
                  anchor="w", fg=MUTED_FG).pack(side="left")
         tk.Button(bar, text="Reload", command=self.reload).pack(side="right")
         views = tk.Frame(bar)
