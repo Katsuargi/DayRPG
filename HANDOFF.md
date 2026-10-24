@@ -118,7 +118,10 @@ Ordered; phases have one concern each (a failure has one suspect).
   amount (copies never stack; tier numbers deferred until merchants
   need pricing). Craft pattern ids must be item ids (validated); the
   GUI tools panel, check_live invariants, and ITEM_ORDER golden
-  updated. Seeded outputs stayed byte-identical.
+  updated. Seeded outputs stayed byte-identical. **Zero-Python claim
+  verified by a throwaway `stone_axe` probe** (+2 tag): pure JSON gave
+  craft → inventory → tagged best-of bonus, plus GUI rows and viewer
+  records — zero code touched; probe reverted after the run.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation
