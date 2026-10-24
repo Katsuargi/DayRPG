@@ -89,6 +89,15 @@ ACTION_GATHER: Dict[str, dict] = {
     if entry["behavior"] == GATHER_ITEM
 }
 
+#: tool_bonus: item id -> (action id it serves, flat bonus) — from
+#: items.json. A gather action scans inventory for items tagged with
+#: ITS id and applies the highest amount (copies never stack).
+TOOL_BONUSES: Dict[str, Tuple[str, int]] = {
+    entry["id"]: tuple(entry["tool_bonus"])
+    for entry in CONTENT.items
+    if "tool_bonus" in entry
+}
+
 #: Attributes consulted by an event check for each action as (kind, key)
 #: pairs, where kind is 'stats' or 'skills'. From content/actions.json.
 ACTION_CHECKS: Dict[str, Tuple[Tuple[str, str], ...]] = {
@@ -425,7 +434,6 @@ class GameEngine:
         # buildings / tools: pattern id -> count owned (semi-permanent)
         self.projects: Dict[str, int] = {}
         self.buildings: Dict[str, int] = {}
-        self.tools: Dict[str, int] = {}
 
         # Set when the player dies; checked at the end of each day.
         self.game_over = False
@@ -705,7 +713,6 @@ class GameEngine:
             "inventory": dict(self.inventory),
             "projects": dict(self.projects),
             "buildings": dict(self.buildings),
-            "tools": dict(self.tools),
             "slot_actions": list(self.slot_actions),
             "game_over": self.game_over,
             "game_over_reason": self.game_over_reason,
@@ -762,12 +769,22 @@ class GameEngine:
                                              table[key].xp)),
                         )
 
-        for name in ("projects", "buildings", "tools"):
+        for name in ("projects", "buildings"):
             saved = data.get(name)
             if isinstance(saved, dict):
                 target: Dict[str, int] = getattr(engine, name)
                 target.update(
                     {str(k): max(0, as_int(v, 0)) for k, v in saved.items()}
+                )
+
+        # Legacy saves stored tools as a separate table — they are
+        # inventory items now; fold them in (older saves stay useful).
+        legacy_tools = data.get("tools")
+        if isinstance(legacy_tools, dict):
+            for tool, count in legacy_tools.items():
+                tool = str(tool)
+                engine.inventory[tool] = (
+                    engine.inventory.get(tool, 0) + max(0, as_int(count, 0))
                 )
 
         actions = data.get("slot_actions")
@@ -910,8 +927,10 @@ class GameEngine:
     def _apply_gather_item(self, action_id: str) -> Tuple[bool, str]:
         """Generic gather: effort cost, skill check, yield on success.
 
-        Everything kind-specific comes from the action's gather block
-        (item, yield range, messages, optional tool bonus/difficulty).
+        Kind-specific data comes from the action's gather block (item,
+        yield range, messages, optional difficulty); tool bonuses come
+        from inventory items whose tool_bonus is tagged with this
+        action's id — highest owned amount wins, copies never stack.
         Draw order is the seeded contract: costs before any draw, one
         skill-check draw, one yield draw only on success, tool bonus
         after the yield with no draw.
@@ -924,10 +943,13 @@ class GameEngine:
         if self._skill_check(skill, cfg.get("difficulty")):
             low, high = cfg["yield"]
             amount = self.rng.randint(low, high)
-            # Tool bonuses apply once, no matter how many copies exist.
-            tool_bonus = cfg.get("tool_bonus")
-            if tool_bonus and self.tools.get(tool_bonus[0]):
-                amount += tool_bonus[1]
+            # Best owned tool tagged for this action wins; copies of the
+            # same tool never stack (max over owned, not sum).
+            bonus = 0
+            for item_id, (tagged, flat) in TOOL_BONUSES.items():
+                if tagged == action_id and self.inventory.get(item_id):
+                    bonus = max(bonus, flat)
+            amount += bonus
             self.inventory[cfg["item"]] += amount
             return True, cfg["success"].format(amount=amount)
         return False, cfg["fail"]
@@ -946,10 +968,10 @@ class GameEngine:
         if pattern is None or pattern.kind != action_id:
             notes.append("that pattern does not fit this task.")
             return False, False
-        store = self.buildings if action_id == BUILD else self.tools
+        store = self.buildings if action_id == BUILD else self.inventory
         if action_id == BUILD and store.get(pattern.id):
-            # Buildings are unique until an upgrade replaces them; tools
-            # may be crafted repeatedly (extras stored for later selling).
+            # Buildings are unique until an upgrade replaces them; crafted
+            # tools may repeat (extras land in inventory for later selling).
             notes.append(f"you already have a finished {pattern.name}.")
             return False, False
         skill = self.skills.get(pattern.skill)

@@ -22,5 +22,15 @@
     "name": "Stone",
     "start": 0,
     "tooltip": "Not used yet."
+  },
+  {
+    "id": "wood_axe",
+    "name": "Wood Axe",
+    "start": 0,
+    "tooltip": "Tool — tagged gather_wood: +1 wood per Gather Wood attempt while you own one. Best tool wins; extra copies don't stack.",
+    "tool_bonus": [
+      "gather_wood",
+      1
+    ]
   }
 ]

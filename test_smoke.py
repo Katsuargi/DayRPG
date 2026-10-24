@@ -68,7 +68,7 @@ os.environ["DAY_SCHEDULER_CONTENT_DIR"] = str(_FIXTURE)  # restore the pin
 # or update these goldens DELIBERATELY together with a fixture re-pin
 # (see DEV_GUIDE "Testing workflow").
 assert ACTION_ORDER == (GATHER_FOOD, GATHER_WOOD, REST, BUILD, CRAFT)
-assert ITEM_ORDER == ("berries", "wood", "herbs", "stone")
+assert ITEM_ORDER == ("berries", "wood", "herbs", "stone", "wood_axe")
 assert tuple(PATTERNS) == ("lean_to", "wood_axe")
 assert tuple(RANDOM_EVENTS) == (
     "wandering_thoughts", "stray_berry_bush", "howling_wind", "quiet_moment",
@@ -178,7 +178,7 @@ try:
     actions = json.loads((_tmp / "actions.json").read_text(encoding="utf-8"))
     gather = actions[0]["gather"]
     gather["yield"] = [5, 2]                  # min > max (randint crash)
-    gather["tool_bonus"] = ["silver_sword", 2]  # not a tool pattern
+    gather["tool_bonus"] = ["silver_sword", 2]  # stray key (lives on items)
     gather["success"] = "you dig {amount holes"  # broken template
     (_tmp / "actions.json").write_text(
         json.dumps(actions, indent=2), encoding="utf-8"
@@ -250,6 +250,29 @@ try:
     items_path.write_bytes(b"\xef\xbb\xbf" + items_path.read_bytes())
     bundle, probs = content.try_load_content(_tmp)
     assert bundle is not None and probs == [], (bundle, probs)
+
+    # (l) tool-bonus wiring: item tag must name an action; a craft
+    # pattern id must be an inventory item (tools are items now)
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    shutil.copy(_FIXTURE / "patterns.json", _tmp / "patterns.json")
+    items = json.loads((_tmp / "items.json").read_text(encoding="utf-8"))
+    items[0]["tool_bonus"] = ["gather_stone", 1]  # unknown action tag
+    (_tmp / "items.json").write_text(json.dumps(items, indent=2),
+                                     encoding="utf-8")
+    pats = json.loads((_tmp / "patterns.json").read_text(encoding="utf-8"))
+    pats["steel_pick"] = pats.pop("wood_axe")  # craft id with no item
+    (_tmp / "patterns.json").write_text(json.dumps(pats, indent=2),
+                                        encoding="utf-8")
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None, "schema problems must stay loadable"
+    assert any(
+        p.startswith("items.json: 'berries'") and "tool_bonus" in p
+        for p in probs
+    ), probs
+    assert any(
+        p.startswith("patterns.json: 'steel_pick'") and "item" in p
+        for p in probs
+    ), probs
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 print("Loader error behavior OK")
@@ -447,7 +470,7 @@ assert starve.complete_day().game_over_reason == "You starved."
 a = GameEngine(seed=11)
 a.buildings["lean_to"] = 1            # exercise asset persistence too
 a.projects["wood_axe"] = 1
-a.tools["wood_axe"] = 2
+a.inventory["wood_axe"] = 2           # tools are inventory items now
 b = GameEngine.from_dict(json.loads(json.dumps(a.to_dict())))  # via JSON
 a.begin_day()
 b.begin_day()
@@ -458,8 +481,14 @@ assert b.day == a.day and b.inventory == a.inventory
 assert b.slot_actions == a.slot_actions
 assert b.stats == a.stats and b.skills == a.skills
 assert b.xp_next == a.xp_next
-assert b.buildings == a.buildings and b.tools == a.tools
+assert b.buildings == a.buildings
 assert b.projects == a.projects
+
+# Legacy saves kept tools in their own table — folded into inventory
+legacy = json.loads(json.dumps(a.to_dict()))
+legacy["tools"] = {"wood_axe": 3}
+folded = GameEngine.from_dict(legacy)
+assert folded.inventory["wood_axe"] == a.inventory.get("wood_axe", 0) + 3
 
 # --- XP: actions train player + skill; level costs scale -------------------
 xp_eng = GameEngine(seed=6)
@@ -587,7 +616,7 @@ ax.set_slot_action(0, CRAFT)
 ax.set_slot_action(1, GATHER_WOOD)
 ax.begin_day()
 made = ax.run_slot(0, pattern_provider=lambda _kind: "wood_axe")
-assert made.success and ax.tools.get("wood_axe") == 1
+assert made.success and ax.inventory.get("wood_axe") == 1
 assert ax.inventory[WOOD_ITEM] == 0
 chop = ax.run_slot(1)
 gain = dict(chop.changes).get("Wood")
@@ -609,7 +638,7 @@ dup.set_slot_action(2, GATHER_WOOD)
 dup.begin_day()
 dup.run_slot(0, pattern_provider=lambda _kind: "wood_axe")
 dup.run_slot(1, pattern_provider=lambda _kind: "wood_axe")
-assert dup.tools.get("wood_axe") == 2
+assert dup.inventory.get("wood_axe") == 2
 chopped_twice = dup.run_slot(2)
 twice_gain = dict(chopped_twice.changes).get("Wood")
 assert twice_gain is not None and 2 <= twice_gain <= 4  # +1 once, not +2
@@ -686,7 +715,6 @@ for _ in range(30):
         assert 0 <= fuzz.energy <= fuzz.MAX_VITAL
         assert fuzz.xp >= 0 and fuzz.level >= 1
         assert all(count >= 0 for count in fuzz.inventory.values())
-        assert all(count >= 0 for count in fuzz.tools.values())
         assert all(count >= 0 for count in fuzz.buildings.values())
         assert all(p.xp >= 0 and p.level >= 1 for p in fuzz.stats.values())
         assert all(p.xp >= 0 and p.level >= 1 for p in fuzz.skills.values())

@@ -47,10 +47,6 @@
         1,
         3
       ],
-      "tool_bonus": [
-        "wood_axe",
-        1
-      ],
       "success": "you chopped wood at the forest edge ({amount} wood).",
       "fail": "you hacked at the trees, but brought back no wood."
     }

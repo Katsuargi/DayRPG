@@ -93,7 +93,6 @@ def _assert_invariants(engine, seed: int) -> None:
                 f"seed {seed}: {name}={value} outside 0..{engine.MAX_VITAL}"
             )
     counts = list(engine.inventory.values())
-    counts += list(engine.tools.values())
     counts += list(engine.buildings.values())
     if any(count < 0 for count in counts):
         raise AssertionError(f"seed {seed}: negative count in stores: {counts}")

@@ -92,6 +92,7 @@ SCHEMA: Dict[str, dict] = {
             "name": "string",
             "start": "int",
             "tooltip": ("opt", "string"),
+            "tool_bonus": ("opt", ("pair", ("ref", "actions"), "int")),
         },
     },
     "skills": {
@@ -129,7 +130,6 @@ SCHEMA: Dict[str, dict] = {
                 "yield": ("pair", "int", "int"),
                 "success": "string",
                 "fail": "string",
-                "tool_bonus": ("opt", ("pair", ("ref", "patterns"), "int")),
                 "difficulty": ("opt", "int"),
             })),
         },
@@ -291,15 +291,16 @@ def _check_optional_dc(
 
 
 def _check_gather(
-    where: str, gather: Any, item_ids: Set[str], tool_ids: Set[str],
+    where: str, gather: Any, item_ids: Set[str],
     problems: List[str],
 ) -> None:
     """The `gather` block of a gather_item action.
 
     Required: item (existing id), yield [min, max] (1 <= min <= max —
     randint would crash otherwise), non-empty success/fail messages.
-    Optional: tool_bonus [tool pattern id, flat bonus >= 1], difficulty
-    (DC override; the engine default is balance.json ACTION_DIFFICULTY).
+    Optional: difficulty (DC override; the engine default is
+    balance.json ACTION_DIFFICULTY). Tool bonuses moved to the tool's
+    item record (items.json tool_bonus) — see _check_tool_bonuses.
     """
     gwhere = f"{where}: 'gather'"
     if not isinstance(gather, dict):
@@ -307,7 +308,7 @@ def _check_gather(
             f"{gwhere} must be an object (item, yield, success, fail)"
         )
         return
-    known = {"item", "yield", "success", "fail", "tool_bonus", "difficulty"}
+    known = {"item", "yield", "success", "fail", "difficulty"}
     for key in gather:
         if key not in known:
             problems.append(f"{gwhere}: unknown key {key!r} (typo?)")
@@ -339,20 +340,6 @@ def _check_gather(
             problems.append(
                 f"{gwhere}: 'success' is not a valid template ({exc})"
             )
-    bonus = gather.get("tool_bonus")
-    if bonus is not None and (
-        not isinstance(bonus, (list, tuple))
-        or len(bonus) != 2
-        or not isinstance(bonus[0], str)
-        or bonus[0] not in tool_ids
-        or not isinstance(bonus[1], int)
-        or isinstance(bonus[1], bool)
-        or bonus[1] < 1
-    ):
-        problems.append(
-            f"{gwhere}: 'tool_bonus' must be [tool pattern id, "
-            "integer >= 1]"
-        )
     _check_optional_dc(gwhere, gather.get("difficulty"), problems)
 
 
@@ -386,7 +373,7 @@ def _check_level_table(
 
 def _check_actions(
     actions: Any, skill_ids: Set[str], stat_ids: Set[str],
-    item_ids: Set[str], tool_ids: Set[str], problems: List[str],
+    item_ids: Set[str], problems: List[str],
 ) -> Set[str]:
     ids: Set[str] = set()
     if not isinstance(actions, list):
@@ -416,7 +403,7 @@ def _check_actions(
         behavior = rec.get("behavior")
         gather = rec.get("gather")
         if behavior == GATHER_ITEM:
-            _check_gather(where, gather, item_ids, tool_ids, problems)
+            _check_gather(where, gather, item_ids, problems)
         elif gather is not None:
             problems.append(
                 f"{where}: 'gather' only applies to gather_item behaviors"
@@ -492,6 +479,11 @@ def _check_patterns(
             problems.append(f"{where}: 'name' must be a non-empty string")
         if rec.get("kind") not in PATTERN_KINDS:
             problems.append(f"{where}: 'kind' must be one of {PATTERN_KINDS}")
+        elif rec.get("kind") == "craft" and pattern_id not in item_ids:
+            problems.append(
+                f"{where}: craft patterns must match an item id "
+                "(the crafted tool is an inventory item)"
+            )
         if rec.get("skill") not in skill_ids:
             problems.append(f"{where}: unknown skill {rec.get('skill')!r}")
         for field_name in ("skill_req", "work"):
@@ -588,6 +580,37 @@ def _check_balance(balance: Any, problems: List[str]) -> None:
         problems.append("balance.json: 'EVENT_CHANCE' must be between 0 and 1")
 
 
+def _check_tool_bonuses(
+    items: Any, action_ids: Set[str], problems: List[str]
+) -> None:
+    """Item tool_bonus: [action id it serves, flat bonus >= 1].
+
+    The action scans inventory for items tagged with its own id and
+    applies the highest amount (copies never stack).
+    """
+    if not isinstance(items, list):
+        return  # _check_items already reported the shape problem
+    for rec in items:
+        if not isinstance(rec, dict):
+            continue
+        bonus = rec.get("tool_bonus")
+        if bonus is None:
+            continue
+        where = f"items.json: {rec.get('id')!r}"
+        if (
+            not isinstance(bonus, (list, tuple))
+            or len(bonus) != 2
+            or not isinstance(bonus[0], str)
+            or bonus[0] not in action_ids
+            or not isinstance(bonus[1], int)
+            or isinstance(bonus[1], bool)
+            or bonus[1] < 1
+        ):
+            problems.append(
+                f"{where}: 'tool_bonus' must be [action id, integer >= 1]"
+            )
+
+
 def validate_bundle(content: Content) -> List[Problem]:
     """All engine-free checks; [] means the content set is consistent.
 
@@ -599,14 +622,10 @@ def validate_bundle(content: Content) -> List[Problem]:
     item_ids = _check_items(content.items, problems)
     skill_ids = _check_level_table(content.skills, "skills", problems)
     stat_ids = _check_level_table(content.stats, "stats", problems)
-    # Tools are craft-kind patterns; gather tool_bonuses reference them.
-    tool_ids: Set[str] = {
-        pid for pid, rec in content.patterns.items()
-        if isinstance(rec, dict) and rec.get("kind") == "craft"
-    } if isinstance(content.patterns, dict) else set()
     action_ids = _check_actions(
-        content.actions, skill_ids, stat_ids, item_ids, tool_ids, problems
+        content.actions, skill_ids, stat_ids, item_ids, problems
     )
+    _check_tool_bonuses(content.items, action_ids, problems)
     _check_patterns(content.patterns, skill_ids, item_ids, problems)
     _check_events(content.events, action_ids, problems)
     _check_balance(content.balance, problems)

@@ -50,8 +50,8 @@ You'll mostly read simple code, but these differences bite:
 - **`None` ≈ `null`.** `True`/`False` capitalized. ⚠ Truthiness is **not**
   like JS: Python treats `0`, `""`, `None`, **and empty `{}` / `[]` / `()`**
   as falsy — in JS empty objects and arrays are *truthy*. The code leans
-  on Python's rule: `if self.tools.get("wood_axe"):` means "owns at least
-  one" (missing key → `None`, count 0 → falsy).
+  on Python's rule: `if self.inventory.get("wood_axe"):` means "owns at
+  least one" (missing key → `None`, count 0 → falsy).
 - **dict `{}` ≈ JS object/Map.** `self.inventory.get("wood", 0)` is
   `obj.wood ?? 0`. `.get()` never throws; it returns the default.
 - **tuple `()` ≈ frozen array.** Used for fixed lists like `SLOT_NAMES`.
@@ -92,7 +92,7 @@ just aren't hand-written anymore.
 | Action behavior + yields | `gather_item` params in the `gather` block of `actions.json` | `_apply_gather_item`, `_apply_rest`, `_apply_sleep` |
 | Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; optional per-record `difficulty` overrides (gather block, pattern, event) |
 | Build/craft blueprints | `content/patterns.json` | `PATTERNS` (`Pattern` dataclass) → `_apply_build_craft`, `patterns_for` |
-| Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to), tool bonus in `_apply_gather_item` |
+| Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to); tool bonuses live on the tool's **item** (`items.json` → `tool_bonus`) and are scanned by `_apply_gather_item` |
 | XP costs & level-ups | `balance.json` → `XP_TO_NEXT`, `XP_COST_STEP` | `xp_cost_for`, `add_xp` |
 | Death | (code) | `_check_game_over` (end of day only) |
 | Random events | `content/events.json` | `RANDOM_EVENTS` (`RandomEvent` dataclass) → `_pick_event` / `_resolve_event` |
@@ -163,7 +163,8 @@ class/module values in tests; override per instance.
   set is gated by `content.py BALANCE_KEYS` (adding a key is a code
   edit by design — `game_core` binds each at import).
 - **Intrinsic values live with their record** — a tool's bonus
-  (`gather.tool_bonus`), a blueprint's `work`/`skill_req`/`materials`,
+  (`tool_bonus` on the tool's **item** record: `[action id it serves,
+  flat amount]`), a blueprint's `work`/`skill_req`/`materials`,
   per-record `difficulty`. Adding content stays zero-Python, and the
   editor can create it without touching code.
 - Building effects whose math is still hardcoded (`_recovery`'s
@@ -412,7 +413,9 @@ Add one entry to `content/patterns.json` — every field:
 
 The key (`wood_fence`) is the STABLE id — it is written to disk in
 saves. `kind` must be `"build"` or `"craft"`; `skill` must exist in
-`skills.json`; `materials` keys must be real items.
+`skills.json`; `materials` keys must be real items. A `"craft"`
+pattern's key must also be an **item id** — crafting yields that
+inventory item (tools are items, so merchants can sell them later).
 
 Almost everything else is automatic: the picker, availability display,
 progress tracking, BUILDINGS/TOOLS sections, persistence, and tooltips

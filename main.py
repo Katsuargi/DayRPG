@@ -530,7 +530,7 @@ class DaySchedulerApp:
         for item, var in self.inventory_vars.items():
             var.set(str(engine.inventory.get(item, 0)))
         for pattern_id, var in self.tool_vars.items():
-            count = engine.tools.get(pattern_id, 0)
+            count = engine.inventory.get(pattern_id, 0)
             var.set(f"×{count}" if count else "—")
         self._rebuild_buildings()
         self.player_level_var.set(str(engine.level))
@@ -690,7 +690,7 @@ class DaySchedulerApp:
             )
             skill_ok = skill is not None and skill.level >= pattern.skill_req
             store = (engine.buildings if pattern.kind == BUILD
-                     else engine.tools)
+                     else engine.inventory)
             owned_count = store.get(pattern.id, 0)
             owned = pattern.kind == BUILD and bool(owned_count)
             costs = ", ".join(
