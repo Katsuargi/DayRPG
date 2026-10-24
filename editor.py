@@ -13,6 +13,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import tkinter as tk
+from tkinter import ttk
 
 from content import CONTENT_FILES, SCHEMA, try_load_content
 
@@ -59,6 +60,15 @@ class ContentViewer:
         tk.Label(bar, text="  read-only (2a) — editing arrives with 2b",
                  anchor="w", fg=MUTED_FG).pack(side="left")
         tk.Button(bar, text="Reload", command=self.reload).pack(side="right")
+        views = tk.Frame(bar)
+        views.pack(side="right", padx=(0, 8))
+        self.btn_files = tk.Button(
+            views, text="Browse", command=lambda: self._show_view("files"))
+        self.btn_tun = tk.Button(
+            views, text="Tunables",
+            command=lambda: self._show_view("tunables"))
+        self.btn_files.pack(side="left", padx=2)
+        self.btn_tun.pack(side="left", padx=2)
 
         body = tk.PanedWindow(self.root, orient="horizontal", sashwidth=4)
         body.pack(fill="both", expand=True, padx=8, pady=4)
@@ -74,8 +84,14 @@ class ContentViewer:
 
         right = tk.Frame(body)
         body.add(right, minsize=430)
-        self.records_canvas = tk.Canvas(right, highlightthickness=0)
-        scroll = tk.Scrollbar(right, orient="vertical",
+
+        # two stacked views: schema-driven records (Browse) and the
+        # aggregate Tunables sheet; toggled by the toolbar buttons
+        self.files_pane = tk.Frame(right)
+        self.tunables_pane = tk.Frame(right)
+        self.records_canvas = tk.Canvas(self.files_pane,
+                                        highlightthickness=0)
+        scroll = tk.Scrollbar(self.files_pane, orient="vertical",
                               command=self.records_canvas.yview)
         self.records_frame = tk.Frame(self.records_canvas)
         self.records_frame.bind(
@@ -88,7 +104,10 @@ class ContentViewer:
         self.records_canvas.configure(yscrollcommand=scroll.set)
         self.records_canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        self.files_pane.pack(fill="both", expand=True)
         self._bind_scroll(self.records_frame)
+        self._build_tunables_pane()
+        self._show_view("files")
 
         panel = tk.LabelFrame(self.root, text="Problems", padx=6, pady=4)
         panel.pack(fill="x", padx=8, pady=(2, 8))
@@ -107,6 +126,89 @@ class ContentViewer:
 
     def _on_mousewheel(self, event) -> None:
         self.records_canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    # --- tunables view (wholesale balance review, one screen) -------------
+
+    def _show_view(self, which: str) -> None:
+        """Toggle Browse (records) vs Tunables (aggregate numbers)."""
+        self.view = which
+        if which == "files":
+            self.tunables_pane.pack_forget()
+            self.files_pane.pack(fill="both", expand=True)
+            self.btn_files.config(relief="sunken")
+            self.btn_tun.config(relief="raised")
+        else:
+            self.files_pane.pack_forget()
+            self.tunables_pane.pack(fill="both", expand=True)
+            self.btn_files.config(relief="raised")
+            self.btn_tun.config(relief="sunken")
+
+    def _build_tunables_pane(self) -> None:
+        tk.Label(
+            self.tunables_pane, anchor="w", font=(None, 10, "bold"),
+            text="Tunables — every balance-relevant number across all "
+                 "files (read-only; edit in the record or balance.json)",
+        ).pack(fill="x", padx=4, pady=(4, 2))
+        self.tunables_tree = ttk.Treeview(
+            self.tunables_pane, columns=("value",), show="tree headings")
+        self.tunables_tree.heading("#0", text="setting")
+        self.tunables_tree.heading("value", text="value")
+        self.tunables_tree.column("value", width=360, anchor="w")
+        vsb = tk.Scrollbar(self.tunables_pane, orient="vertical",
+                           command=self.tunables_tree.yview)
+        self.tunables_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self.tunables_tree.pack(fill="both", expand=True)
+
+    def _build_tunables(self) -> None:
+        """Rebuild the aggregate sheet from the schema + current bundle."""
+        tree = self.tunables_tree
+        tree.delete(*tree.get_children())
+        if self.bundle is None:
+            tree.insert("", "end", text="cannot render — file set unusable",
+                        values=("",))
+            return
+        for fname in CONTENT_FILES:
+            spec = SCHEMA[fname]
+            file_node = tree.insert("", "end", text=f"{fname}.json",
+                                    values=("",), open=True)
+            if spec["kind"] == "flat":
+                recs = [("balance", getattr(self.bundle, fname))]
+            else:
+                recs = self._records_of(fname)
+            for rec_id, rec in recs:
+                parent = (file_node if spec["kind"] == "flat" else
+                          tree.insert(file_node, "end", text=rec_id,
+                                      values=("",), open=True))
+                if isinstance(rec, dict):
+                    self._tune_rows(tree, parent, fname, rec, spec["fields"])
+
+    def _tune_rows(self, tree, parent, fname, rec, fields) -> None:
+        for field, fspec in fields.items():
+            spec = fspec
+            while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
+                spec = spec[1]
+            value = rec.get(field)
+            if isinstance(spec, tuple) and spec[0] == "nested":
+                node = tree.insert(parent, "end", text=field, values=("",),
+                                   open=True)
+                if isinstance(value, dict):
+                    self._tune_rows(tree, node, fname, value, spec[1])
+                else:
+                    tree.insert(node, "end", text="(not an object)",
+                                values=(f"{value!r} ⚠",))
+                continue
+            shown = None
+            if isinstance(spec, str) and spec in ("int", "number"):
+                if value is None and field == "difficulty":
+                    shown = "(global)"  # knob exists; record uses the DC
+                elif value is not None:
+                    shown = self._value_text(spec, value, fname)
+            elif (isinstance(spec, tuple) and spec[0] in ("pair", "dict_int")
+                  and value is not None):
+                shown = self._value_text(spec, value, fname)
+            if shown is not None:
+                tree.insert(parent, "end", text=field, values=(shown,))
 
     # --- data ------------------------------------------------------------
 
@@ -161,6 +263,7 @@ class ContentViewer:
             self.problems_list.insert("end", f"{owner}: {prob}")
         self.file_list.selection_set(0)
         self._render_file(0)
+        self._build_tunables()  # keep the aggregate sheet in sync
 
     # --- events -----------------------------------------------------------
 

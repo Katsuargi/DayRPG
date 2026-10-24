@@ -156,6 +156,22 @@ override takes effect. `EVENT_CHANCE` mirrors the module constant the
 same way now (its value lives in `balance.json`). Don't edit the
 class/module values in tests; override per instance.
 
+### Where a number lives (split rule)
+
+- **`content/balance.json` = global knobs** — values with the same
+  meaning everywhere: costs, DCs, XP amounts, event outcomes. The key
+  set is gated by `content.py BALANCE_KEYS` (adding a key is a code
+  edit by design — `game_core` binds each at import).
+- **Intrinsic values live with their record** — a tool's bonus
+  (`gather.tool_bonus`), a blueprint's `work`/`skill_req`/`materials`,
+  per-record `difficulty`. Adding content stays zero-Python, and the
+  editor can create it without touching code.
+- Building effects whose math is still hardcoded (`_recovery`'s
+  lean-to branch) unify into records when the effects registry lands
+  (roadmap-deferred).
+- **Wholesale review:** the viewer's **Tunables** tab aggregates every
+  balance-relevant number from all files onto one screen.
+
 ## The three check systems (how they interact)
 
 1. **Action check** — every gather and every pattern attempt rolls

@@ -97,6 +97,18 @@ Ordered; phases have one concern each (a failure has one suspect).
   balance.json stay the defaults. Content left unchanged, so seeded
   output stays byte-identical (proven by the suite). The viewer shows
   the new fields through SCHEMA with zero viewer code.
+- **Viewer nitpick #2 (gather rendering):** opt-wrapped nested specs
+  rendered as one raw dict string, hiding the gather sub-rows (incl.
+  difficulty). Fixed by unwrapping opt/nullable before the nested
+  branch; the GUI test pins the sub-header + difficulty row.
+- **Viewer nitpick #3 (effect location — decided):** effects stay with
+  their records; balance.json keeps global knobs only (split rule
+  documented in DEV_GUIDE). The viewer gained a read-only **Tunables**
+  toolbar view aggregating every number across files for wholesale
+  balance reviews. Centralizing bonuses into balance was rejected:
+  BALANCE_KEYS is code-gated — it would break zero-Python additions
+  and editor-only content creation; lean-to's amount defers to the
+  effects registry phase.
 - Editor architecture was reviewed across four multi-model rounds —
   see the DEV_GUIDE closing note (editor reads `content.py` ONLY, never
   `game_core.py`) and these rules: schema-driven forms, validation

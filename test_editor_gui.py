@@ -66,6 +66,31 @@ _collect(viewer.records_frame)
 assert "gather:" in [t.strip() for t in _texts], "nested block header missing"
 assert any(t.strip().endswith("difficulty") for t in _texts), \
     "difficulty row missing under gather"
+
+# tunables view: one screen with every number, incl. "(global)" knobs
+viewer._show_view("tunables")
+assert viewer.view == "tunables"
+_tree = viewer.tunables_tree
+
+
+def _find(parent: str, label: str):
+    for node in _tree.get_children(parent):
+        if _tree.item(node, "text") == label:
+            return node
+    return None
+
+
+_bal = _find("", "balance.json")
+_leaf = _find(_bal, "ACTION_DIFFICULTY")
+assert _leaf is not None and _tree.item(_leaf, "values")[0] == "8"
+_acts = _find("", "actions.json")
+_gf = _find(_acts, "gather_food")
+_gath = _find(_gf, "gather")
+_diff = _find(_gath, "difficulty")
+assert _diff is not None and "(global)" in _tree.item(_diff, "values")[0]
+_pat = _find("", "patterns.json")
+_work = _find(_pat, "lean_to")  # pattern record node exists
+assert _work is not None
 root.destroy()
 
 # 2) fixtures dir: visually distinct (banner flag + title tag)
