@@ -1,8 +1,9 @@
 """GUI smoke for the read-only content viewer (Phase 2a).
 
 Run: python test_editor_gui.py — skips (exit 0) without a display.
-Headless write-layer tests live elsewhere (2b); this file only proves
-the viewer opens live, fixtures, and broken content without crashing.
+Headless write-layer tests live in test_content_write.py (2b); this
+file only proves the viewer opens live, fixtures, and broken content
+without crashing.
 """
 
 from __future__ import annotations

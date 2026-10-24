@@ -89,14 +89,27 @@ Ordered; phases have one concern each (a failure has one suspect).
   is flagged, schema drift is pinned by mutation loops in test_smoke,
   and editor.py holds no write code (grep-verified). **Viewer UX signed
   off (2026-10-23):** click-throughs work, economy tab approved, no
-  mechanical adjustments wanted at this stage. Next: 2b — headless
-  write layer (D9 Save-All, D11 stale guard, D10 canonical form,
-  `test_content_write.py`). First 2b design decision: how D11's
-  per-file hash-at-load reaches the caller (extend `try_load_content`'s
-  return — ripples through test_smoke's call sites — vs. a parallel
-  `load_with_hashes` wrapper). Writer care point: open with
-  `newline="\n"` or Windows CRLF fights `.gitattributes` (eol=lf) and
-  breaks byte-stability.
+  mechanical adjustments wanted at this stage. **2b is done and
+  green**: the headless write layer lives in `content.py` —
+  `try_load_content_with_state()` (core loader: one read per file, sha256
+  + decode from the same bytes; `try_load_content()` delegates, zero
+  ripple) plus `save(content, path, *, state, dirty, overwrite_stale)` →
+  `SaveResult(written, skipped, reformatted, problems)`. Constraint
+  3/D13 gate: files with own problems are skipped-not-fatal, the total
+  problem count may never grow (`ContentError` with the list), so
+  incremental repair persists. D11: `StaleWriteError` names changed
+  files; `overwrite_stale=True` is the confirmed overwrite. D10:
+  canonical bytes-mode writes (LF, no BOM, `ensure_ascii=False`,
+  `allow_nan=False`, indent 2 + trailing newline — bytes avoid the
+  Windows `newline=` trap); non-canonical originals (CRLF, `0.10`, odd
+  indent, BOM) land in `reformatted` as notices. D9: same-dir `.tmp` +
+  `os.replace`, pre-save bytes restored on partial failure
+  (monkeypatch-proven), untouched files never read for rewrite, not
+  atomic across files (git is net). Acceptance: `test_content_write.py`
+  9 sections, spawned by test_smoke (D6). Loader side-effect: an
+  invalid-UTF-8 file now yields a Problem instead of a crash (completes
+  constraint 1's "diagnose any file"). Next: **2c** — items.json forms
+  (dirty tracking + unsaved guard), saving through this layer.
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

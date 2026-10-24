@@ -531,6 +531,10 @@ then assert both engines roll identical results.
 - **Never write content files with sorted keys** — planner order, event
   draw order, and the seeded RNG all read file order. The fixture
   goldens fail loudly if an editor sorts them.
+- **Saving goes through `content.save()`** (the editor write layer): temp
+  → `os.replace` per file, refuses any increase in the problem count,
+  refuses stale writes when disk changed since load (`StaleWriteError`),
+  and emits canonical LF bytes — don't hand-roll JSON writes.
 - **`ITEM_ORDER` is derived** from `items.json` order, and `inventory`
   is built from each item's `start` — new items are JSON records, not
   `__init__` edits.

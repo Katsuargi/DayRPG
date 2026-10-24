@@ -915,3 +915,15 @@ assert _spawn.returncode == 0, (
     "test_editor_gui.py failed:\n" + _spawn.stdout + _spawn.stderr
 )
 print("test_editor_gui.py OK")
+
+# --- Headless: the 2b write layer (fresh interpreter) -------------------------
+_spawn = subprocess.run(
+    [sys.executable, str(_ROOT / "test_content_write.py")],
+    capture_output=True,
+    text=True,
+    cwd=str(_ROOT),
+)
+assert _spawn.returncode == 0, (
+    "test_content_write.py failed:\n" + _spawn.stdout + _spawn.stderr
+)
+print("test_content_write.py OK")

@@ -10,7 +10,9 @@ different consumers can share it:
   fallback to built-in values; git/backup is the rollback).
 - test_smoke.py / check_live.py re-validate content directly.
 - the content editor calls try_load_content() (non-throwing) so a broken
-  file can still be opened and repaired.
+  file can still be opened and repaired, then save() (the headless 2b
+  write layer: atomic per file, stale-guarded, problem-gated, never
+  sorts keys) to write edits back.
 
 Path resolution for load_content(): an explicit `path` argument wins,
 else the DAY_SCHEDULER_CONTENT_DIR environment variable (the test
@@ -24,13 +26,14 @@ these files with sort_keys=True.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 #: The seven content files; all are required.
 CONTENT_FILES: Tuple[str, ...] = (
@@ -772,26 +775,47 @@ def _finite_float(value: str) -> float:
     return number
 
 
-def try_load_content(
-    path: Optional[Path] = None,
-) -> Tuple[Optional[Content], List[Problem]]:
-    """Load + validate without throwing: (content_or_None, problems).
+@dataclass
+class LoadState:
+    """Load-time facts the 2b write layer needs.
 
-    content is None only when a file is missing or unparseable (nothing
-    trustworthy to build); schema/reference problems come back alongside
-    a usable bundle so the editor can display and repair it.
+    `problems` is constraint 3's baseline: a save may list problems but
+    must never increase this count. `hashes` maps each file stem to the
+    sha256 of its bytes as loaded — save() re-checks disk against it and
+    refuses stale writes (D11).
+    """
+
+    problems: List[Problem]
+    hashes: Dict[str, str]
+
+
+def try_load_content_with_state(
+    path: Optional[Path] = None,
+) -> Tuple[Optional[Content], LoadState]:
+    """Core loader: (content_or_None, load state) — see try_load_content.
+
+    Each file is read once (bytes): hashed for D11, then decoded from
+    those same bytes so the hash and the parsed content can never refer
+    to two different reads of the file.
     """
     directory = Path(path) if path is not None else content_dir()
     problems: List[str] = []
+    hashes: Dict[str, str] = {}
     raw: Dict[str, Any] = {}
     for name in CONTENT_FILES:
         file_path = directory / f"{name}.json"
         try:
-            # utf-8-sig: a BOM is tolerated (stripped), everything else
-            # about the bytes is unchanged (D10 keeps saves BOM-free).
-            text = file_path.read_text(encoding="utf-8-sig")
+            data = file_path.read_bytes()
         except OSError as exc:
             problems.append(f"{name}.json: cannot read ({exc})")
+            continue
+        hashes[name] = hashlib.sha256(data).hexdigest()
+        try:
+            # utf-8-sig: a BOM is tolerated (stripped), everything else
+            # about the bytes is unchanged (D10 keeps saves BOM-free).
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            problems.append(f"{name}.json: not valid UTF-8 ({exc})")
             continue
         try:
             raw[name] = json.loads(
@@ -807,7 +831,9 @@ def try_load_content(
         except _NonStandardJson as exc:
             problems.append(f"{name}.json: {exc}")
     if problems:
-        return None, [Problem(p) for p in problems]
+        return None, LoadState(
+            problems=[Problem(p) for p in problems], hashes=hashes
+        )
     content = Content(
         items=raw["items"],
         skills=raw["skills"],
@@ -818,7 +844,22 @@ def try_load_content(
         balance=raw["balance"],
         source=directory,
     )
-    return content, validate_bundle(content)
+    return content, LoadState(
+        problems=validate_bundle(content), hashes=hashes
+    )
+
+
+def try_load_content(
+    path: Optional[Path] = None,
+) -> Tuple[Optional[Content], List[Problem]]:
+    """Load + validate without throwing: (content_or_None, problems).
+
+    content is None only when a file is missing or unparseable (nothing
+    trustworthy to build); schema/reference problems come back alongside
+    a usable bundle so the editor can display and repair it.
+    """
+    content, state = try_load_content_with_state(path)
+    return content, list(state.problems)
 
 
 def load_content(path: Optional[Path] = None) -> Content:
@@ -832,6 +873,161 @@ def load_content(path: Optional[Path] = None) -> Content:
     if problems or content is None:
         raise ContentError(problems or ["content could not be built"])
     return content
+
+
+# --- Write layer (2b, headless: D9 Save-All, D10 canonical, D11 stale) -------
+
+class StaleWriteError(Exception):
+    """Disk changed since load (D11); `.files` lists the changed stems.
+
+    The headless refusal — 2c's UI maps it to the D11 choices (reload /
+    discard / confirmed overwrite / cancel).
+    """
+
+    def __init__(self, files: List[str]) -> None:
+        self.files = list(files)
+        super().__init__(
+            "changed on disk since load: "
+            + ", ".join(f"{f}.json" for f in self.files)
+        )
+
+
+@dataclass
+class SaveResult:
+    """What one Save-All did (and did not do) — 2c displays this.
+
+    `skipped` files had problems of their own (constraint 3: a file is
+    written only when it has none). `reformatted` files' bytes on disk
+    weren't canonical, so writing them canonicalizes beyond the edit
+    (D10: CRLF, `0.10`, odd indentation, BOM) — reported, not blocked.
+    `problems` is the current validation: listed, non-blocking while
+    the total count hasn't grown (constraint 3, amended per D13).
+    """
+
+    written: List[str]
+    skipped: List[str]
+    reformatted: List[str]
+    problems: List[Problem]
+
+
+def _canonical_bytes(data: Any) -> bytes:
+    """The bytes save() writes: UTF-8, no BOM, LF, trailing newline.
+
+    ensure_ascii=False keeps text readable; allow_nan=False honors D10
+    (non-finite values refuse at write); dict/array order passes
+    through untouched — keys are never sorted (constraint 4).
+    """
+    text = json.dumps(data, ensure_ascii=False, allow_nan=False, indent=2)
+    return (text + "\n").encode("utf-8")
+
+
+def _was_canonical(data: bytes) -> bool:
+    """Was this file already in exactly our canonical shape? (D10)
+
+    Anything else (CRLF, `0.10`, odd indentation, a BOM) means saving
+    reformats beyond the edit — the caller is warned, not blocked.
+    """
+    try:
+        return _canonical_bytes(json.loads(data.decode("utf-8-sig"))) == data
+    except (ValueError, UnicodeDecodeError):
+        return False  # unparseable/stale bytes being overwritten anyway
+
+
+def save(
+    content: Content,
+    path: Optional[Path] = None,
+    *,
+    state: LoadState,
+    dirty: Optional[Iterable[str]] = None,
+    overwrite_stale: bool = False,
+) -> SaveResult:
+    """Stage -> gate -> temp-replace, per constraint 3 / D9 / D10 / D11.
+
+    Raises:
+    - ValueError for an unknown file name (caller bug);
+    - StaleWriteError when a staged file no longer hashes to
+      `state.hashes` — reload, or pass overwrite_stale=True to confirm
+      the overwrite (check->replace TOCTOU is accepted; git is the net);
+    - ContentError when the save would increase the bundle's total
+      problem count, listing every problem verbatim.
+
+    Only files in `dirty` (default: all seven) are ever touched, and
+    only those with no problems of their own are written; the rest are
+    reported in `skipped`. Each write is a same-directory temp file +
+    os.replace; on failure, files already replaced are restored from
+    their pre-save bytes — not atomic across files (git is the net).
+    """
+    directory = Path(path) if path is not None else Path(content.source)
+    stems = (
+        tuple(CONTENT_FILES) if dirty is None else tuple(dict.fromkeys(dirty))
+    )
+    unknown = [name for name in stems if name not in CONTENT_FILES]
+    if unknown:
+        raise ValueError(f"unknown content file(s): {', '.join(unknown)}")
+
+    # Stage: read each staged file's bytes now — the D11 stale check
+    # and the compensation copy both come from this single read.
+    originals: Dict[str, Optional[bytes]] = {}
+    stale: List[str] = []
+    for name in stems:
+        file_path = directory / f"{name}.json"
+        try:
+            data = file_path.read_bytes()
+        except OSError:
+            originals[name] = None
+            stale.append(name)  # missing/unreadable = changed since load
+            continue
+        originals[name] = data
+        if hashlib.sha256(data).hexdigest() != state.hashes.get(name):
+            stale.append(name)
+    if stale and not overwrite_stale:
+        raise StaleWriteError(stale)
+
+    # Gate: never increase the bundle's total problem count (would-be
+    # disk state: staged files get this in-memory content; unstaged and
+    # untouched files keep the load-time problems state.problems counts).
+    new_problems = validate_bundle(content)
+    if len(new_problems) > len(state.problems):
+        raise ContentError(new_problems)
+    own_problem = {p.file for p in new_problems if p.file}
+    staged = [name for name in stems if f"{name}.json" not in own_problem]
+    skipped = [name for name in stems if f"{name}.json" in own_problem]
+
+    payload: Dict[str, bytes] = {}
+    reformatted: List[str] = []
+    for name in staged:
+        payload[name] = _canonical_bytes(getattr(content, name))
+        data = originals[name]
+        if data is not None and not _was_canonical(data):
+            reformatted.append(name)
+
+    replaced: List[str] = []
+    try:
+        for name in staged:
+            target = directory / f"{name}.json"
+            tmp = directory / f".{name}.json.tmp"
+            with open(tmp, "wb") as handle:  # bytes: no newline translation
+                handle.write(payload[name])
+            os.replace(tmp, target)
+            replaced.append(name)
+    except BaseException:
+        # D9 compensation: put back the pre-save bytes of everything
+        # this call already replaced, then let the failure surface.
+        for name in replaced:
+            data = originals[name]
+            if data is None:
+                (directory / f"{name}.json").unlink(missing_ok=True)
+            else:
+                (directory / f"{name}.json").write_bytes(data)
+        for name in stems:
+            (directory / f".{name}.json.tmp").unlink(missing_ok=True)
+        raise
+    return SaveResult(
+        written=staged,
+        skipped=skipped,
+        reformatted=reformatted,
+        problems=list(new_problems),
+    )
 
 
 
