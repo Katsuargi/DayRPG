@@ -27,3 +27,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-23 | nitpick #5: difficulty_target aim (stats or skills) | 96547c2 | test_smoke + check_live + test_editor_gui green
 - 2026-10-23 | viewer round: uses/used-by links, click-through, Economy view | e964727 | test_smoke + check_live + test_editor_gui green
 - 2026-10-23 | docs: HANDOFF rollover lesson corrected (context-rollover amnesia, not invisible continuation) | f5af4ba | docs-only
+- 2026-10-23 | pre-2b housekeeping: edit-arrival wording (2c) + viewer sign-off recorded | f617cbf | test_smoke + test_editor_gui green
