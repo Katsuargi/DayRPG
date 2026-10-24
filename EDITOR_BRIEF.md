@@ -113,6 +113,28 @@ a directory argument and runs off the UI thread).
   (six files): one edit→save→reload + one blocked-bad-edit,
   model-first.
 
+### 2d-ops design decisions (round 5 — user-approved)
+
+- **D18 — dict-file record ops.** Add/Duplicate/↑↓/Delete extend to
+  `kind == "dict"` files (balance stays flat, no ops). Identity is the
+  dict KEY: a new dict record gets a synthetic editable id row while
+  unsaved (D7's edit-until-first-save), renamed order-preserving (dict
+  order is data for `order_sensitive` files) with the same
+  bookkeeping retarget array renames do. Add appends the key at the
+  end (D5); ↑↓ swap key pairs (D5 seed banner); Delete keeps the
+  incoming-edge D7 block. Buttons close over rendered ids, so every
+  id-taking action first resolves through `_live_id()` — a chained
+  rename map that also fixes the stale-closure gap array ids had
+  since 2c.
+- **D19 — acceptance: the full authoring pass.** The user's fishing
+  scenario IS the integration test, model-first (D17): add skill
+  `fishing` → add item `fish` → add a gather action whose same-session
+  skill/item dropdowns resolve them (D12) → add a rod whose
+  `tool_bonus` pair targets that action → one Save-All → reload →
+  every link intact. Plus per-op dict beats (add, key rename, reorder
+  with banner, duplicate, D7 delete-block) and key-order preservation
+  (constraint 4) across saves.
+
 ## Goal
 
 A tkinter content editor for `content/*.json`: browse, edit, validate,

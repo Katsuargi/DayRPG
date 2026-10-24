@@ -62,6 +62,7 @@ class ContentViewer:
         # browsing) and the per-record ● set (D15, session-scoped)
         self._pane_edit: tuple[str, str] | None = None
         self._record_dirty: set[tuple[str, str]] = set()
+        self._renamed: dict[tuple[str, str], str] = {}  # D18 stale-id map
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_widgets()
         self.reload()
@@ -369,6 +370,7 @@ class ContentViewer:
         self._forms.clear()
         self._pane_edit = None
         self._record_dirty.clear()
+        self._renamed.clear()
         self._rebuild()
 
     def _records_of(self, fname: str) -> list[tuple[str, dict]]:
@@ -518,6 +520,7 @@ class ContentViewer:
                 side="left", padx=(8, 2))
 
     def _on_edit_toggle(self, fname: str, rec_id: str) -> None:
+        rec_id = self._live_id(fname, rec_id)  # stale-closure safety (D18)
         key = (fname, rec_id)
         if key in self._editing:
             self._editing.discard(key)
@@ -538,6 +541,20 @@ class ContentViewer:
             self._forms.pop(old, None)
         self._pane_edit = key
 
+    def _live_id(self, fname: str, rec_id: str) -> str:
+        """Buttons close over the id they rendered with; a rename (D7
+        array ids, D18 dict keys) makes those closures stale — resolve
+        to today's id (rename writes keep the map single-hop)."""
+        return self._renamed.get((fname, rec_id), rec_id)
+
+    def _record_rename(self, fname: str, old: str, new: str) -> None:
+        """Remember a rename so stale closures still resolve; entries
+        already pointing at `old` advance to `new` (chains compress)."""
+        for key in self._renamed:
+            if self._renamed[key] == old:
+                self._renamed[key] = new
+        self._renamed[(fname, old)] = new
+
     def _next_id(self, fname: str, base: str) -> str:
         existing = {rid for rid, _ in self._records_of(fname)}
         candidate, n = base, 1
@@ -554,12 +571,23 @@ class ContentViewer:
         rec: dict = {}
         for field, fspec in SCHEMA[fname]["fields"].items():
             spec = fspec
-            optional = False
+            optional = nullable = False
             while isinstance(spec, tuple) and spec[0] in ("opt", "nullable"):
                 optional = optional or spec[0] == "opt"
+                nullable = nullable or spec[0] == "nullable"
                 spec = spec[1]
-            if optional or not isinstance(spec, str):
-                continue  # absent optional; pair/ref/nested start unset
+            if nullable and not optional:
+                # house style: nullable keys ship present as null (the
+                # fixtures carry them and the engine reads with [])
+                rec[field] = None
+                continue
+            if optional:
+                continue  # absent until edited
+            if isinstance(spec, tuple) and spec[0] in ("list", "dict_int"):
+                rec[field] = [] if spec[0] == "list" else {}  # house style
+                continue
+            if not isinstance(spec, str):
+                continue  # pair/ref/nested start unset (user chooses)
             if spec == "slug":
                 rec[field] = rec_id
             elif spec == "string":
@@ -578,12 +606,16 @@ class ContentViewer:
         self._refresh_lists()
 
     def _on_add(self, fname: str) -> None:
-        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+        if self.bundle is None or SCHEMA[fname].get("kind") not in (
+                "array", "dict"):
             return
         base = "new_" + (fname[:-1] if fname.endswith("s") else fname)
         rec_id = self._next_id(fname, base)
-        getattr(self.bundle, fname).append(
-            self._default_record(fname, rec_id))
+        rec = self._default_record(fname, rec_id)
+        if SCHEMA[fname].get("kind") == "dict":
+            getattr(self.bundle, fname)[rec_id] = rec  # key = id (D18)
+        else:
+            getattr(self.bundle, fname).append(rec)
         self._unsaved_ids.add((fname, rec_id))
         self._editing.add((fname, rec_id))  # a new record opens for edit
         if SCHEMA[fname].get("layout") == "pane":
@@ -592,7 +624,9 @@ class ContentViewer:
         self._render_file(self._current_idx)
 
     def _on_duplicate(self, fname: str, rec_id: str) -> None:
-        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+        rec_id = self._live_id(fname, rec_id)
+        if self.bundle is None or SCHEMA[fname].get("kind") not in (
+                "array", "dict"):
             return
         source = next((r for rid, r in self._records_of(fname)
                        if rid == rec_id), None)
@@ -602,13 +636,18 @@ class ContentViewer:
         new_rec = copy.deepcopy(source)
         if isinstance(new_rec, dict) and "id" in new_rec:
             new_rec["id"] = new_id
-        getattr(self.bundle, fname).append(new_rec)  # D5: appends at end
+        if SCHEMA[fname].get("kind") == "dict":
+            getattr(self.bundle, fname)[new_id] = new_rec  # key = id
+        else:
+            getattr(self.bundle, fname).append(new_rec)  # D5: at end
         self._unsaved_ids.add((fname, new_id))
         self._mark_dirty(fname)
         self._render_file(self._current_idx)
 
     def _on_move(self, fname: str, rec_id: str, delta: int) -> None:
-        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+        rec_id = self._live_id(fname, rec_id)
+        if self.bundle is None or SCHEMA[fname].get("kind") not in (
+                "array", "dict"):
             return
         recs = getattr(self.bundle, fname)
         ids = [rid for rid, _ in self._records_of(fname)]
@@ -618,7 +657,14 @@ class ContentViewer:
         target = pos + delta
         if not 0 <= target < len(recs):
             return
-        recs[pos], recs[target] = recs[target], recs[pos]
+        if SCHEMA[fname].get("kind") == "dict":
+            # dict order is data: swap keys by rebuilding in place
+            ids[pos], ids[target] = ids[target], ids[pos]
+            swapped = {k: recs[k] for k in ids}
+            recs.clear()
+            recs.update(swapped)
+        else:
+            recs[pos], recs[target] = recs[target], recs[pos]
         if fname not in self._reorder_warned:  # D5 banner, once per file
             self._reorder_warned.add(fname)
             messagebox.showinfo(
@@ -631,7 +677,9 @@ class ContentViewer:
         self._render_file(self._current_idx)
 
     def _on_delete(self, fname: str, rec_id: str) -> None:
-        if self.bundle is None or SCHEMA[fname].get("kind") != "array":
+        rec_id = self._live_id(fname, rec_id)
+        if self.bundle is None or SCHEMA[fname].get("kind") not in (
+                "array", "dict"):
             return
         # incoming edges only: deleting breaks whoever REFERENCES this
         # record (its own outgoing refs die with it — not a blocker)
@@ -653,7 +701,10 @@ class ContentViewer:
         recs = getattr(self.bundle, fname)
         ids = [rid for rid, _ in self._records_of(fname)]
         if rec_id in ids:
-            recs.pop(ids.index(rec_id))
+            if isinstance(recs, dict):
+                recs.pop(rec_id)
+            else:
+                recs.pop(ids.index(rec_id))
         self._unsaved_ids.discard((fname, rec_id))
         self._editing.discard((fname, rec_id))
         self._forms.pop((fname, rec_id), None)
@@ -774,7 +825,7 @@ class ContentViewer:
             self._render_pane_edit(fname)
             self._bind_scroll(self.records_frame)
             return
-        if SCHEMA[fname].get("kind") == "array":
+        if SCHEMA[fname].get("kind") in ("array", "dict"):
             tk.Button(self.records_frame, text="+ add record",
                       command=lambda f=fname: self._on_add(f)).pack(
                 anchor="e", padx=8, pady=(0, 2))
@@ -813,7 +864,7 @@ class ContentViewer:
         tk.Label(self.records_frame, anchor="w", fg=MUTED_FG,
                  text="editing one record — Done returns to browsing"
                  ).pack(fill="x", padx=4)
-        if SCHEMA[fname].get("kind") == "array":
+        if SCHEMA[fname].get("kind") in ("array", "dict"):
             tk.Button(self.records_frame, text="+ add record",
                       command=lambda f=fname: self._on_add(f)).pack(
                 anchor="e", padx=8, pady=(0, 2))
@@ -827,7 +878,8 @@ class ContentViewer:
         self._blocks[(fname, rec_id)] = header
         if self.bundle is not None and isinstance(rec, dict):
             self._record_buttons(fname, rec_id,
-                                 SCHEMA[fname].get("kind") == "array")
+                                 SCHEMA[fname].get("kind")
+                                 in ("array", "dict"))
         self._render_ref_rows(fname, rec_id)
         if not isinstance(rec, dict):  # invalid data must still render
             tk.Label(self.records_frame, anchor="w", fg=ALERT_FG,
@@ -940,6 +992,8 @@ class RecordForm:
         # opening a form never mutates the bundle
         self._attach: tuple[dict, str] | None = None
         editable_id = (fname, rec_id) in viewer._unsaved_ids  # D7
+        if editable_id and "id" not in spec:
+            self._add_key_row(parent, rec_id)  # D18: dict key identity
         for field, fspec in spec.items():
             self._add_field(parent, field, fspec, record.get(field),
                             field in record, editable_id=editable_id)
@@ -1040,7 +1094,57 @@ class RecordForm:
             viewer._editing.add(new_key)
         if old_key in viewer._forms:
             viewer._forms[new_key] = viewer._forms.pop(old_key)
+        if old_key in viewer._blocks:
+            viewer._blocks[new_key] = viewer._blocks.pop(old_key)
+        if viewer._pane_edit == old_key:
+            viewer._pane_edit = new_key  # the pane follows the record (D14)
         viewer._record_dirty.discard(old_key)  # _changed re-marks new key
+        viewer._record_rename(self.fname, old_key[1], new)
+        self._changed()
+
+    def _add_key_row(self, parent, rec_id: str) -> None:
+        """D18: an unsaved dict record edits its KEY (dict schemas have
+        no id field — the key IS the identity, D7-locked after save)."""
+        row = tk.Frame(parent)
+        row.pack(fill="x", padx=8)
+        tk.Label(row, anchor="w", fg=MUTED_FG, text="    id",
+                 width=12).pack(side="left")
+        var = tk.StringVar(value=rec_id)
+        tk.Entry(row, textvariable=var, width=30).pack(side="left")
+        self.vars["id"] = var
+
+        def on_change(*_a, _v=var):
+            self._write_new_key(_v.get())
+        var.trace_add("write", on_change)
+
+    def _write_new_key(self, new: str) -> None:
+        """Rename an unsaved dict record's key: position preserved (dict
+        order is data), bookkeeping retargeted, rename recorded so
+        stale button closures resolve (D18)."""
+        if not new or new == self.rec_id:
+            return
+        viewer = self.viewer
+        data = getattr(viewer.bundle, self.fname)
+        if new in data:
+            return  # keys must stay unique (D7) — ignore until free
+        old_key, new_key = (self.fname, self.rec_id), (self.fname, new)
+        pairs = list(data.items())
+        data.clear()
+        for k, v in pairs:
+            data[new if k == self.rec_id else k] = v
+        self.rec_id = new
+        for store in (viewer._unsaved_ids, viewer._editing,
+                      viewer._record_dirty):
+            if old_key in store:
+                store.discard(old_key)
+                store.add(new_key)
+        if old_key in viewer._forms:
+            viewer._forms[new_key] = viewer._forms.pop(old_key)
+        if old_key in viewer._blocks:
+            viewer._blocks[new_key] = viewer._blocks.pop(old_key)
+        if viewer._pane_edit == old_key:
+            viewer._pane_edit = new_key  # the pane follows the record (D14)
+        viewer._record_rename(self.fname, old_key[1], new)
         self._changed()
 
     def _add_combo(self, row, field, values, value, *,

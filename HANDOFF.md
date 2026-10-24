@@ -147,11 +147,23 @@ Ordered; phases have one concern each (a failure has one suspect).
   collapse visibly, never silently), nullable → "(none)" ↔ null. New
   handles: `form.rowvars`, `form.groups`. Acceptance ×6 files,
   model-first (D17): bad edit blocks + repair + edit→save→reload + ●
-  lifecycle, dialogs patched headless; full suite green. Known gap:
-  record ops (add/duplicate/reorder/delete) cover array files only —
-  dict-file ops (add a skill, reorder events) are NOT built; ask if
-  wanted. Next: **2e** — repair mode (parse-error line/column + raw
-  text fallback) and optional main.py launch integration (D3).
+  lifecycle, dialogs patched headless; full suite green. **2d-ops is
+  done and green** (D18–D19, brief round 5): all four record ops
+  extended to dict-kind files — key = identity, unsaved dict records
+  get a synthetic editable id row (order-preserving rename,
+  uniqueness-guarded against clobbering, sets/forms/blocks/pane all
+  retargeted); `_live_id` + `_record_rename` resolve stale button
+  closures after ANY rename, which also fixes the latent array-id gap
+  from 2c. Defaults learned by the tests: nullable keys ship `null`
+  (the engine reads `entry["stat_xp"]` with `[]`) and required
+  containers ship `[]`/`{}` — `checks` must exist. THE acceptance is
+  the user's fishing pass verbatim, model-first: add skill `fishing`
+  → add item `fish` → add `go_fishing` (behavior `gather_item`,
+  same-session skill/item dropdowns, gather child form) → add
+  `fishing_rod` with a tool_bonus pair → one Save-All → reload →
+  every link and the collect_references edge intact. Next: **2e** —
+  repair mode (parse-error line/column + raw text fallback) and
+  optional main.py launch integration (D3).
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

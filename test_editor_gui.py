@@ -531,3 +531,156 @@ finally:
     shutil.rmtree(tmp2, ignore_errors=True)
 
 print("GUI smoke OK: 2d forms, pane, nested editors")
+
+# --- 2d-ops: dict record ops (D18) -------------------------------------------
+dialogued.clear()
+_real3 = {name: getattr(editor_mod.messagebox, name) for name in
+          ("showerror", "showinfo", "showwarning", "askyesno",
+           "askyesnocancel")}
+tmp3 = Path(tempfile.mkdtemp(prefix="forms3_"))
+try:
+    for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
+        shutil.copy(f, tmp3 / f.name)
+    for _n in ("showerror", "showinfo", "showwarning"):
+        setattr(editor_mod.messagebox, _n, _rec(_n))
+    editor_mod.messagebox.askyesno = _rec("askyesno", True)
+    editor_mod.messagebox.askyesnocancel = _rec("askyesnocancel", True)
+
+    root3, viewer = build(tmp3)
+    idx_s = list(CONTENT_FILES).index("skills")
+    viewer.file_list.selection_set(idx_s)
+    viewer._render_file(idx_s)
+
+    # dict files get Add: key-based record, synthetic id row (D18)
+    n_skills = len(viewer.bundle.skills)
+    _btn("+ add record").invoke()
+    assert len(viewer.bundle.skills) == n_skills + 1, "dict add works"
+    new_key = next(k for k in viewer.bundle.skills
+                   if k.startswith("new_skill"))
+    assert ("skills", new_key) in viewer._editing, "add opens for edit"
+    sform = viewer._forms[("skills", new_key)]
+    assert "id" in sform.vars, "dict records edit their key (D18)"
+    sform.vars["id"].set("fishing")
+    assert "fishing" in viewer.bundle.skills and new_key not in \
+        viewer.bundle.skills, "the key renames in place"
+    assert list(viewer.bundle.skills)[-1] == "fishing", \
+        "renamed key keeps its appended position (order is data)"
+    assert ("skills", "fishing") in viewer._editing, "sets retarget"
+    # uniqueness: renaming onto an existing key never clobbers it
+    sform.vars["id"].set("foraging")
+    assert "foraging" in viewer.bundle.skills and "fishing" in \
+        viewer.bundle.skills, "taken keys are ignored"
+    sform.vars["id"].set("fishing")
+    sform.vars["name"].set("Fishing")
+    sform.vars["start_level"].set("1")
+    assert viewer.problems == [], viewer.problems
+
+    # D7 still applies to dict records: referenced foraging refuses
+    dialogued.clear()
+    viewer._on_delete("skills", "foraging")
+    assert dialogued and dialogued[0][0] == "showerror", dialogued
+    assert "foraging" in viewer.bundle.skills
+
+    # duplicate appends a key-based copy (D5)
+    viewer._on_duplicate("skills", "fishing")
+    assert list(viewer.bundle.skills)[-1] == "fishing_copy", \
+        list(viewer.bundle.skills)
+
+    # reorder swaps key pairs and banners once (D5)
+    dialogued.clear()
+    before_keys = list(viewer.bundle.skills)
+    pos = before_keys.index("fishing")
+    assert pos > 0, "appended record has a predecessor to swap with"
+    viewer._on_move("skills", "fishing", -1)
+    after_keys = list(viewer.bundle.skills)
+    assert after_keys == (before_keys[:pos - 1]
+                          + [before_keys[pos], before_keys[pos - 1]]
+                          + before_keys[pos + 1:]), after_keys
+    assert any(d[0] == "showinfo" and "Reorder" in d[1]
+               for d in dialogued), dialogued
+
+    # save → reload: keys, order, and edits all persist
+    viewer._on_save()
+    assert viewer.dirty == set(), viewer.dirty
+    viewer.reload()
+    assert viewer.bundle.skills["fishing"]["name"] == "Fishing"
+    assert list(viewer.bundle.skills) == after_keys, \
+        "dict key order survives the save (constraint 4)"
+
+    # --- D19: the full fishing authoring pass --------------------------------
+    # items: add `fish` (array add + id rename + fields)
+    idx_i = list(CONTENT_FILES).index("items")
+    viewer.file_list.selection_set(idx_i)
+    viewer._render_file(idx_i)
+    _btn("+ add record").invoke()
+    iform = viewer._forms[("items", viewer.bundle.items[-1]["id"])]
+    iform.vars["id"].set("fish")
+    iform.vars["name"].set("Fish")
+    iform.vars["start"].set("0")
+    assert viewer.problems == [], viewer.problems
+
+    # actions: add the gather action in the pane; the same-session skill
+    # dropdown resolves `fishing` (D12) and the id rename keeps the pane
+    idx_a = list(CONTENT_FILES).index("actions")
+    viewer.file_list.selection_set(idx_a)
+    viewer._render_file(idx_a)
+    _btn("+ add record").invoke()
+    aform = viewer._forms[viewer._pane_edit]
+    aform.vars["id"].set("go_fishing")
+    assert viewer._pane_edit == ("actions", "go_fishing"), \
+        "the pane follows a mid-form id rename (D14)"
+    aform.vars["label"].set("Go Fishing")
+    aform.vars["behavior"].set("gather_item")
+    aform.vars["skill"].set("fishing")
+    assert aform.groups, "the gather child form mounts (D16)"
+    gform = aform.groups["gather"]
+    gform.vars["item"].set("fish")
+    gform.rowvars["yield"][0][0].set("1")
+    gform.rowvars["yield"][0][1].set("3")
+    gform.vars["success"].set("you reeled in a catch ({amount} fish).")
+    gform.vars["fail"].set("the line came back empty.")
+    gform.vars["difficulty"].set("4")
+    assert viewer.problems == [], viewer.problems
+
+    # items: add `fishing_rod` — a tool whose pair targets the new action
+    viewer.file_list.selection_set(idx_i)
+    viewer._render_file(idx_i)
+    _btn("+ add record").invoke()
+    rform = viewer._forms[("items", viewer.bundle.items[-1]["id"])]
+    rform.vars["id"].set("fishing_rod")
+    rform.vars["name"].set("Fishing Rod")
+    rform.vars["start"].set("0")
+    rform.rowvars["tool_bonus"][0][0].set("go_fishing")
+    rform.rowvars["tool_bonus"][0][1].set("1")
+    rod = viewer.bundle.items[-1]
+    assert rod["tool_bonus"] == ["go_fishing", 1], rod.get("tool_bonus")
+    assert viewer.problems == [], viewer.problems
+
+    # ONE Save-All for items + actions; reload proves every link
+    viewer._on_save()
+    assert viewer.dirty == set(), viewer.dirty
+    viewer.reload()
+    skills = viewer.bundle.skills
+    items = {r["id"]: r for r in viewer.bundle.items}
+    acts = {a["id"]: a for a in viewer.bundle.actions}
+    assert skills["fishing"]["name"] == "Fishing"
+    assert items["fish"]["name"] == "Fish"
+    assert items["fishing_rod"]["tool_bonus"] == ["go_fishing", 1]
+    assert acts["go_fishing"]["behavior"] == "gather_item"
+    assert acts["go_fishing"]["skill"] == "fishing"
+    assert acts["go_fishing"]["gather"]["item"] == "fish"
+    assert acts["go_fishing"]["stat_xp"] is None, "house-style null (D18)"
+    assert ("actions", "go_fishing", "skill", "skills", "fishing") in \
+        collect_references(viewer.bundle), "the graph sees the new edges"
+    assert viewer.problems == [], viewer.problems
+
+    # clean close: no dialog
+    dialogued.clear()
+    viewer._on_close()
+    assert not dialogued, "clean close must not prompt"
+finally:
+    for _n, _fn in _real3.items():
+        setattr(editor_mod.messagebox, _n, _fn)
+    shutil.rmtree(tmp3, ignore_errors=True)
+
+print("GUI smoke OK: 2d-ops dict ops + fishing pass")
