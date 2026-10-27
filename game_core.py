@@ -459,6 +459,7 @@ class GameEngine:
 
         self._day_in_progress = False
         self._slot_results: List[SlotResult] = []
+        self._day_snapshot: Optional[Dict[str, object]] = None  # abort rewind
 
     # --- Planning --------------------------------------------------------
 
@@ -479,6 +480,10 @@ class GameEngine:
     def begin_day(self) -> None:
         if self._day_in_progress:
             raise RuntimeError("Day already in progress")
+        # Rewind point for abort_day (Batch 4): full state + rng, taken
+        # at plan time. Session-local — never serialized (to_dict and the
+        # save identity gate never see it).
+        self._day_snapshot = self.to_dict()
         self._slot_results = []
         self._day_in_progress = True
 
@@ -619,8 +624,14 @@ class GameEngine:
     def abort_day(self) -> None:
         """Recover from a failed or interrupted day so planning resumes.
 
-        Idempotent — safe to call even when no day is in progress.
+        Rewinds to the begin_day() snapshot (state AND rng), so the
+        aborted day's partial effects are undone and a re-run replays
+        it identically — no double-dipping (review Batch 4). Idempotent:
+        with no day in progress it only clears the flags, as before.
         """
+        if self._day_in_progress and self._day_snapshot is not None:
+            fresh = type(self).from_dict(self._day_snapshot)
+            self.__dict__.update(fresh.__dict__)  # full rewind
         self._day_in_progress = False
         self._slot_results = []
 

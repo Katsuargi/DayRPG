@@ -555,6 +555,28 @@ e.run_slot(1)
 e.run_slot(2)
 e.complete_day()
 
+# --- abort_day rewinds: partial effects undone, replay identical ----------
+# (review Batch 4 — slots that already ran used to keep their effects,
+# so re-running the day double-dipped)
+f = GameEngine(seed=13)
+f.EVENT_CHANCE = 0.0
+before = (f.health, f.energy, f.hunger, f.xp, dict(f.inventory),
+          f.skills["foraging"].xp)
+f.begin_day()
+first = f.run_slot(0)
+mid = (f.health, f.energy, f.hunger, f.xp, dict(f.inventory),
+       f.skills["foraging"].xp)
+assert mid != before, "the slot must actually change state"
+f.abort_day()
+after = (f.health, f.energy, f.hunger, f.xp, dict(f.inventory),
+         f.skills["foraging"].xp)
+assert after == before, "abort_day must rewind the aborted day"
+assert not f.day_in_progress
+f.begin_day()
+second = f.run_slot(0)
+assert second.changes == first.changes, "the rewound RNG replays the day"
+f.abort_day()
+
 # --- Engine: death is flagged at the end of the day -----------------------
 dead = GameEngine(seed=3)
 dead.begin_day()

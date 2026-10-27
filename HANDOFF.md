@@ -215,8 +215,12 @@ Ordered; phases have one concern each (a failure has one suspect).
   deliberately via `python tests/make_golden_save.py`); `_save_game`
   is now atomic (temp → fsync → replace with PermissionError retry;
   temp name matches `.gitignore`'s `.*.json.tmp`) — ghost-key pruning
-  stays declined per the stray-keys decision. **Batch 4 pending:**
-  `abort_day` snapshot/restore + double-dip test.
+  stays declined per the stray-keys decision. **Batch 4 done:**
+  `begin_day` captures a session-local `to_dict` snapshot (never
+  serialized — golden save untouched); `abort_day` restores it via
+  `from_dict` + `__dict__` update, so partial slot effects are undone
+  and the rewound RNG replays the aborted day identically —
+  double-dip closed, with state-equality + replay regression tests.
   **Batch 5 scheduled (user
   request): generalized eating** — a `food` flag on items, Rest/Sleep
   eat any flagged item with honest "you ate X" text, validation +
