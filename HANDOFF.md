@@ -206,7 +206,18 @@ Ordered; phases have one concern each (a failure has one suspect).
   same table so the balance form auto-types; mutation tests cover both
   the refusal and the legal fractional keys) — plus the build_craft ⇒
   id ∈ PATTERN_KINDS rule (+ test), closing the dead-action bug the
-  editor's dropdown used to offer. **Batch 5 scheduled (user
+  editor's dropdown used to offer. **Batch 3 done:** save identity —
+  `SAVE_GAME_ID`/`SAVE_VERSION` stamped by `to_dict`, `from_dict`
+  refuses wrong shape / wrong game / unsupported version (5 refusal
+  cases incl. balance-as-save and v99 — each lands as a clean "Load
+  failed" status); pinned golden save `tests/fixtures/golden_save.json`
+  (loads with spot-field asserts AND round-trips exactly; re-pin
+  deliberately via `python tests/make_golden_save.py`); `_save_game`
+  is now atomic (temp → fsync → replace with PermissionError retry;
+  temp name matches `.gitignore`'s `.*.json.tmp`) — ghost-key pruning
+  stays declined per the stray-keys decision. **Batch 4 pending:**
+  `abort_day` snapshot/restore + double-dip test.
+  **Batch 5 scheduled (user
   request): generalized eating** — a `food` flag on items, Rest/Sleep
   eat any flagged item with honest "you ate X" text, validation +
   tests + guide updates, so more foods can be looped in later.

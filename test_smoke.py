@@ -598,6 +598,38 @@ legacy["tools"] = {"wood_axe": 3}
 folded = GameEngine.from_dict(legacy)
 assert folded.inventory["wood_axe"] == a.inventory.get("wood_axe", 0) + 3
 
+# --- Save identity: a wrong document must refuse, not become Day 1 --------
+# (review Batch 3 — the old loader happily turned balance.json into a
+# fresh game and accepted version 99)
+balance_doc = json.loads(
+    (_FIXTURE / "balance.json").read_text(encoding="utf-8"))
+for bad_doc, why in (
+    (balance_doc, "content file as save"),
+    ([], "JSON array"),
+    ({"game": "dayscheduler_rpg", "version": 99}, "future version"),
+    ({"game": "chess", "version": 1}, "foreign game"),
+    ({"version": 1}, "missing game tag"),
+):
+    try:
+        GameEngine.from_dict(bad_doc)
+        raise AssertionError(f"from_dict must refuse: {why}")
+    except ValueError as exc:
+        assert "save" in str(exc), (why, exc)
+
+# --- Golden save: the pinned file must keep loading (re-pin deliberately) --
+golden = json.loads(
+    (_ROOT / "tests" / "fixtures" / "golden_save.json").read_text(
+        encoding="utf-8"))
+g = GameEngine.from_dict(golden)
+assert (g.day, g.health, g.energy, g.hunger, g.gold) == (4, 73, 41, 62, 37)
+assert g.skills["foraging"].level == 3 and g.skills["foraging"].xp == 55
+assert g.inventory["wood_axe"] == 1 and g.buildings["lean_to"] == 1
+assert g.slot_actions == ["gather_food", "rest", "gather_wood"]
+# format stability: load → re-serialize reproduces the pinned document
+# exactly — when to_dict's format legitimately changes, re-pin with
+# python tests/make_golden_save.py (deliberate, fixture-golden style)
+assert g.to_dict() == golden, "golden save must round-trip unchanged"
+
 # --- XP: actions train player + skill; level costs scale -------------------
 xp_eng = GameEngine(seed=6)
 xp_eng.EVENT_CHANCE = 0.0

@@ -699,12 +699,17 @@ class GameEngine:
 
     # --- Persistence -----------------------------------------------------
 
+    #: Save identity: to_dict stamps both; from_dict refuses anything
+    #: else (balance.json can never masquerade as a save — review B3).
+    SAVE_GAME_ID = "dayscheduler_rpg"
+    SAVE_VERSION = 1
+
     def to_dict(self) -> Dict[str, object]:
         """JSON-serializable snapshot of the whole game (save between days)."""
         rng_version, rng_state, rng_gauss = self.rng.getstate()
         return {
-            "game": "dayscheduler_rpg",
-            "version": 1,
+            "game": self.SAVE_GAME_ID,
+            "version": self.SAVE_VERSION,
             "day": self.day,
             "health": self.health,
             "energy": self.energy,
@@ -741,6 +746,26 @@ class GameEngine:
         Missing or invalid fields fall back to defaults so saves stay
         forward-compatible with future versions.
         """
+
+        # Identity gate (review Batch 3): refuse non-saves BEFORE any
+        # field work. Wrong shape / wrong game / unsupported version all
+        # raise ValueError, which _load_game already reports as a clean
+        # "Load failed: ..." status — never a silent fresh Day 1.
+        if not isinstance(data, dict):
+            raise ValueError(
+                "save must be a JSON object "
+                f"(got {type(data).__name__})"
+            )
+        if data.get("game") != cls.SAVE_GAME_ID:
+            raise ValueError(
+                "not a Day Scheduler RPG save (missing or wrong 'game' tag)"
+            )
+        version = data.get("version")
+        if type(version) is not int or not 1 <= version <= cls.SAVE_VERSION:
+            raise ValueError(
+                f"unsupported save version {version!r} "
+                f"(this build reads 1..{cls.SAVE_VERSION})"
+            )
 
         def as_int(value: object, default: int) -> int:
             try:

@@ -475,6 +475,16 @@ The round-trip test (seed 11 in `test_smoke.py`) is the template: mutate
 state, `to_dict → json.dumps → from_dict`, assert everything matches,
 then assert both engines roll identical results.
 
+Saves also carry an identity stamp — `game` and `version` (`SAVE_GAME_ID`
+/ `SAVE_VERSION`); `from_dict` refuses anything else, so picking a
+content file in the Load dialog is a clean "Load failed" status, never a
+silent fresh Day 1, and future versions can't load into older builds.
+The pinned golden save `tests/fixtures/golden_save.json` must keep
+loading (and round-tripping byte-identical): when `to_dict`'s format
+legitimately gains a field, re-pin it deliberately with
+`python tests/make_golden_save.py` — same discipline as the fixture
+goldens.
+
 ## Testing workflow
 
 - **Engine tests run on the pinned fixture** (`tests/fixtures/content/`,

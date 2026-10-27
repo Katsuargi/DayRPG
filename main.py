@@ -8,6 +8,8 @@ slots -> events -> summary -> sleep -> next day.
 from __future__ import annotations
 
 import json
+import os
+import time
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
@@ -1001,10 +1003,30 @@ class DaySchedulerApp:
         )
         if not path:
             return
+        # Atomic like the content write layer: temp file → fsync →
+        # replace, with a short retry for transient Windows locks
+        # (antivirus/indexer). The temp name matches .gitignore's
+        # .*.json.tmp pattern; git is NOT the net for saves (untracked).
+        tmp = os.path.join(os.path.dirname(path),
+                           "." + os.path.basename(path) + ".tmp")
         try:
-            with open(path, "w", encoding="utf-8") as handle:
+            with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump(self.engine.to_dict(), handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())  # survive crash/power-cut
+            for attempt in range(3):
+                try:
+                    os.replace(tmp, path)  # atomic swap (D9 pattern)
+                    break
+                except PermissionError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.15)
         except OSError as exc:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
             self._safe_status(f"Save failed: {exc}")
             return
         self._safe_status(f"Game saved to {path}")
