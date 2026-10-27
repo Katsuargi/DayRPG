@@ -36,3 +36,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-26 | review batch 1: event-DC display + save-dialog/compensation hardening + housekeeping | e05850f | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-26 | review batch 2: balance per-key typing + build_craft id rule; food slice scheduled (Batch 5) | a6b53b3 | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-26 | review batch 3: save identity gate + pinned golden save + atomic _save_game | db8f205 | test_smoke + check_live + test_editor_gui + test_content_write green
+- 2026-10-26 | review batch 4: abort_day snapshot rewind — no double-dip, identical replay | 4dd66a1 | test_smoke + check_live + test_editor_gui + test_content_write green
