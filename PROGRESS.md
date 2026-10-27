@@ -34,3 +34,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-23 | 2d-ops: dict-file record ops + key identity (D18) + fishing full-pass acceptance (D19) | 21c25ed | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-23 | 2e repair flow (D4): line/column + open-external + Run-check dir arg — Phase 2 complete | 94e0d36 | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-26 | review batch 1: event-DC display + save-dialog/compensation hardening + housekeeping | e05850f | test_smoke + check_live + test_editor_gui + test_content_write green
+- 2026-10-26 | review batch 2: balance per-key typing + build_craft id rule; food slice scheduled (Batch 5) | a6b53b3 | test_smoke + check_live + test_editor_gui + test_content_write green
