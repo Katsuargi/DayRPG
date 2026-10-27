@@ -54,21 +54,31 @@ BEHAVIOR_HANDLERS: Dict[str, str] = {
 #: messages, optional tool bonus / difficulty) — validated by _check_gather.
 GATHER_ITEM: str = "gather_item"
 
-#: Exact key set balance.json must carry — a missing key would crash the
-#: game at import, an unknown key is a typo silently ignored. Both fail
-#: validation. Mirrors the balance constants game_core reads.
-BALANCE_KEYS: Tuple[str, ...] = (
-    "MAX_VITAL", "XP_TO_NEXT", "XP_COST_STEP",
-    "ACTION_XP", "SKILL_XP",
-    "CHECK_DIE", "EVENT_DIFFICULTY", "ACTION_DIFFICULTY",
-    "EVENT_XP_SUCCESS", "EVENT_XP_FAILURE", "EVENT_FAILURE_HEALTH",
-    "EVENT_CHANCE", "LEAN_TO_RECOVERY_BONUS",
-    "GATHER_ENERGY_COST", "GATHER_HUNGER_COST",
-    "REST_FOOD_HEALTH", "REST_FOOD_ENERGY", "REST_FOOD_HUNGER_NET",
-    "REST_EMPTY_HEALTH", "REST_EMPTY_ENERGY", "REST_EMPTY_HUNGER",
-    "SLEEP_HUNGER_NIGHT", "SLEEP_FOOD_HEALTH", "SLEEP_FOOD_ENERGY",
-    "SLEEP_FOOD_HUNGER_NET", "SLEEP_EMPTY_HEALTH", "SLEEP_EMPTY_ENERGY",
-)
+#: Per-key balance types: the exact key set balance.json must carry (a
+#: missing key would crash the game at import, an unknown key is a typo
+#: silently ignored — both fail validation) AND each value's required
+#: type. Engine-fatal mismatches (float CHECK_DIE → randint crash, float
+#: MAX_VITAL → fractional vitals) are refused here; the editor's SCHEMA
+#: reads the same table, so its balance form types itself (review Batch 2).
+BALANCE_TYPES: Dict[str, str] = {
+    "MAX_VITAL": "int", "XP_TO_NEXT": "int", "XP_COST_STEP": "int",
+    "ACTION_XP": "int", "SKILL_XP": "int",
+    "CHECK_DIE": "int", "EVENT_DIFFICULTY": "int", "ACTION_DIFFICULTY": "int",
+    "EVENT_XP_SUCCESS": "int", "EVENT_XP_FAILURE": "int",
+    "EVENT_FAILURE_HEALTH": "int",
+    "EVENT_CHANCE": "number", "LEAN_TO_RECOVERY_BONUS": "number",
+    "GATHER_ENERGY_COST": "int", "GATHER_HUNGER_COST": "int",
+    "REST_FOOD_HEALTH": "int", "REST_FOOD_ENERGY": "int",
+    "REST_FOOD_HUNGER_NET": "int",
+    "REST_EMPTY_HEALTH": "int", "REST_EMPTY_ENERGY": "int",
+    "REST_EMPTY_HUNGER": "int",
+    "SLEEP_HUNGER_NIGHT": "int", "SLEEP_FOOD_HEALTH": "int",
+    "SLEEP_FOOD_ENERGY": "int", "SLEEP_FOOD_HUNGER_NET": "int",
+    "SLEEP_EMPTY_HEALTH": "int", "SLEEP_EMPTY_ENERGY": "int",
+}
+#: Names only, derived so the two tables can never drift — used for the
+#: exact-set check and SCHEMA field order. Mirrors game_core's constants.
+BALANCE_KEYS: Tuple[str, ...] = tuple(BALANCE_TYPES)
 
 #: Pattern kinds (must match game_core's BUILD/CRAFT constants).
 PATTERN_KINDS: Tuple[str, ...] = ("build", "craft")
@@ -178,7 +188,7 @@ SCHEMA: Dict[str, dict] = {
         "kind": "flat",
         "order_sensitive": False,
         "layout": "inline",
-        "fields": {key: "number" for key in BALANCE_KEYS},
+        "fields": {key: BALANCE_TYPES[key] for key in BALANCE_KEYS},
     },
 }
 
@@ -490,6 +500,14 @@ def _check_actions(
                 f"{tuple(BEHAVIOR_HANDLERS)}"
             )
         behavior = rec.get("behavior")
+        if behavior == "build_craft" and action_id not in PATTERN_KINDS:
+            # patterns_for() matches pattern.kind against the ACTION id
+            # and PATTERN_KINDS admits only build/craft — any other name
+            # can never fit a pattern (review Batch 2: dead action)
+            problems.append(
+                f"{where}: 'build_craft' actions must be named one of "
+                f"{PATTERN_KINDS} (patterns match by action id)"
+            )
         gather = rec.get("gather")
         if behavior == GATHER_ITEM:
             _check_gather(where, gather, item_ids, problems)
@@ -679,6 +697,14 @@ def _check_balance(balance: Any, problems: List[str]) -> None:
                 f"balance.json: unknown key {key!r} (typo? known keys are "
                 "listed in content.py BALANCE_KEYS)"
             )
+        elif BALANCE_TYPES[key] == "int":
+            # type(x) is int (house rule for new sites): bools excluded;
+            # a float here reaches engine int contracts (randint, vitals)
+            if type(balance[key]) is not int:
+                problems.append(
+                    f"balance.json: {key!r} must be an integer (got "
+                    f"{balance[key]!r})"
+                )
         elif not _is_number(balance[key]):
             problems.append(f"balance.json: {key!r} must be a number")
     # Crash-level sanity only; placeholder balance stays freely tunable.

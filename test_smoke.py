@@ -251,6 +251,50 @@ try:
     bundle, probs = content.try_load_content(_tmp)
     assert bundle is not None and probs == [], (bundle, probs)
 
+    # (k2) balance typing: int keys refuse floats — 20.5 CHECK_DIE would
+    # crash randint at play time; the set stays loadable and named
+    # (review Batch 2; BALANCE_TYPES is the single source)
+    shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
+    balance = json.loads((_tmp / "balance.json").read_text(encoding="utf-8"))
+    balance["CHECK_DIE"] = 20.5
+    balance["MAX_VITAL"] = 100.0
+    (_tmp / "balance.json").write_text(
+        json.dumps(balance, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None, "typing problems keep the set loadable"
+    assert any("CHECK_DIE" in p and "integer" in p for p in probs), probs
+    assert any("MAX_VITAL" in p and "integer" in p for p in probs), probs
+    # ...while the genuinely fractional keys stay number-typed
+    shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
+    balance = json.loads((_tmp / "balance.json").read_text(encoding="utf-8"))
+    balance["EVENT_CHANCE"] = 0.25
+    (_tmp / "balance.json").write_text(
+        json.dumps(balance, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None and probs == [], probs
+    shutil.copy(_FIXTURE / "balance.json", _tmp / "balance.json")
+
+    # (k3) build_craft actions must be named build/craft — patterns
+    # match by action id, so any other name is a dead action the editor
+    # would happily have offered (review Batch 2)
+    shutil.copy(_FIXTURE / "actions.json", _tmp / "actions.json")
+    actions = json.loads((_tmp / "actions.json").read_text(encoding="utf-8"))
+    actions.append({
+        "id": "repair", "label": "Repair", "behavior": "build_craft",
+        "skill": None, "checks": [], "stat_xp": None,
+    })
+    (_tmp / "actions.json").write_text(
+        json.dumps(actions, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None
+    assert any(
+        p.startswith("actions.json: 'repair':") and "build_craft" in p
+        for p in probs
+    ), probs
+
     # (l) tool-bonus wiring: item tag must name an action; a craft
     # pattern id must be an inventory item (tools are items now)
     shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")

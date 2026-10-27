@@ -200,8 +200,17 @@ Ordered; phases have one concern each (a failure has one suspect).
   save, atomic `_save_game` + PermissionError retry + fsync; ghost-key
   pruning stays declined per the stray-keys decision); **4** —
   `abort_day` snapshot/restore + a double-dip regression test.
-  Deferred after those: content-mutation fuzz (post-Batch-2), food as
-  a tag (effects era).
+  **Batch 2 done (this round):** balance keys typed per-key —
+  `BALANCE_TYPES` is the single source (validator refuses floats for
+  int keys like CHECK_DIE, message names key + value; SCHEMA reads the
+  same table so the balance form auto-types; mutation tests cover both
+  the refusal and the legal fractional keys) — plus the build_craft ⇒
+  id ∈ PATTERN_KINDS rule (+ test), closing the dead-action bug the
+  editor's dropdown used to offer. **Batch 5 scheduled (user
+  request): generalized eating** — a `food` flag on items, Rest/Sleep
+  eat any flagged item with honest "you ate X" text, validation +
+  tests + guide updates, so more foods can be looped in later.
+  Deferred: content-mutation fuzz (after Batch 2).
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in
