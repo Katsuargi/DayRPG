@@ -758,6 +758,11 @@ class ContentViewer:
                 "was written. Fix these first:\n  "
                 + "\n  ".join(str(p) for p in exc.problems))
             return False
+        except OSError as exc:
+            # locked/restricted file (antivirus, permissions): a plain
+            # message, buffer stays dirty — never a console traceback
+            messagebox.showerror("Save failed", str(exc))
+            return False
         for fname in result.written:
             self.dirty.discard(fname)
             self._record_dirty = {k for k in self._record_dirty

@@ -277,7 +277,7 @@ centrally in `run_slot`); it just means no yield.
 
 ```json
 { "id": "fish", "name": "Fish", "start": 0,
-  "tooltip": "Food. Restores health and energy." }
+  "tooltip": "Fresh catch." }
 ```
 
 `id` is a lowercase slug — code, saves, and cross-references (pattern
@@ -287,6 +287,10 @@ array position (insert before `"stone"` if you care
 where it shows up). The inventory panel, change summaries, and
 validation pick it up automatically; `start` is how many you begin the
 game with. Item ids double as save keys — keep them stable.
+
+⚠ The tooltip is shown verbatim in-game: Rest and Sleep only eat
+`FOOD_ITEM` (berries) today, so never label a new item "Food" until it
+actually is one — say what it is genuinely for.
 
 **5. Test it** — append a block to `test_smoke.py`:
 

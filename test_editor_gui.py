@@ -20,7 +20,11 @@ _ROOT = Path(__file__).resolve().parent
 
 try:
     import tkinter as tk
+except ImportError:
+    print("GUI smoke skipped: tkinter not installed")
+    raise SystemExit(0)
 
+try:
     _probe = tk.Tk()
     _probe.withdraw()
     _probe.destroy()

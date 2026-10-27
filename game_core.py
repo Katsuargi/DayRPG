@@ -884,7 +884,7 @@ class GameEngine:
             self.health = clamp(self.health + EVENT_FAILURE_HEALTH)
             event_changes.append(("Health", EVENT_FAILURE_HEALTH))
 
-        check = f"{' + '.join(labels)} vs DC {EVENT_DIFFICULTY}"
+        check = f"{' + '.join(labels)} vs DC {dc}"
         note = (
             f"event check [{check}]: d20 {die} + {bonus} = {roll} — "
             f"{'success' if success else 'failure'}."

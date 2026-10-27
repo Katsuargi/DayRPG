@@ -1031,15 +1031,23 @@ def save(
             replaced.append(name)
     except BaseException:
         # D9 compensation: put back the pre-save bytes of everything
-        # this call already replaced, then let the failure surface.
+        # this call already replaced, then let the ORIGINAL failure
+        # surface — a restore that itself hits the lock must not
+        # replace it (git is the safety net either way).
         for name in replaced:
             data = originals[name]
-            if data is None:
-                (directory / f"{name}.json").unlink(missing_ok=True)
-            else:
-                (directory / f"{name}.json").write_bytes(data)
+            try:
+                if data is None:
+                    (directory / f"{name}.json").unlink(missing_ok=True)
+                else:
+                    (directory / f"{name}.json").write_bytes(data)
+            except OSError:
+                pass
         for name in stems:
-            (directory / f".{name}.json.tmp").unlink(missing_ok=True)
+            try:
+                (directory / f".{name}.json.tmp").unlink(missing_ok=True)
+            except OSError:
+                pass
         raise
     return SaveResult(
         written=staged,

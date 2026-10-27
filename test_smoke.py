@@ -744,6 +744,21 @@ assert checked.event.event_id == "generic"
 assert checked.event.check != ""                 # gather food has contributors
 assert "A test of mettle" in checked.event.note
 named.abort_day()
+# per-event difficulty must drive BOTH the roll and the printed DC
+# (the display once hard-coded the global EVENT_DIFFICULTY — review
+# finding, Batch 1 regression)
+named.RANDOM_EVENTS = {
+    "hard": RandomEvent(
+        id="hard", text="A daunting trial.", actions=(), check=True,
+        difficulty=50,
+    ),
+}
+named.begin_day()
+hard = named.run_slot(0)
+assert hard.event.event_id == "hard"
+assert "vs DC 50" in hard.event.note, hard.event.note
+assert "vs DC 10" not in hard.event.note, hard.event.note
+named.abort_day()
 
 # --- Stat XP hook: actions can train stats (ACTION_STAT_XP) ----------------
 hook = GameEngine(seed=45)

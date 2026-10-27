@@ -182,6 +182,26 @@ Ordered; phases have one concern each (a failure has one suspect).
   `check_live.py <repaired-dir>` exits 0. Roadmap after Phase 2: the
   deferred list above (effects registry, NPCs/merchants, Ren'Py port)
   plus any viewer/editor nitpicks the user raises.
+- **Claude review round (2026-10-26):** second-opinion code review
+  triaged against source — 3 findings were stale (2e's Run-check had
+  landed but not yet pushed), 2 were decided behavior (D13's count
+  gate; the stray-save-keys tolerance recorded above), the rest real
+  and verified line-by-line. **Batch 1 done (this round):** event-DC
+  display now prints the record's own DC (+ regression test),
+  editor Save-All catches OSError into a dialog (no traceback),
+  save compensation can no longer mask the original failure,
+  `.gitignore` covers `saves/` and `.*.json.tmp`, the GUI test skips
+  cleanly when tkinter isn't installed, DEV_GUIDE's fish tooltip
+  stopped claiming "Food". **Pending batches:** **2** — per-key
+  balance int/float typing (validator + SCHEMA ⇒ editor auto-types)
+  and the build_craft ⇒ id ∈ PATTERN_KINDS validation rule, with
+  mutation tests; **3** — save identity (game/version checks,
+  wrong-shape ValueError, negative golden tests + a pinned golden
+  save, atomic `_save_game` + PermissionError retry + fsync; ghost-key
+  pruning stays declined per the stray-keys decision); **4** —
+  `abort_day` snapshot/restore + a double-dip regression test.
+  Deferred after those: content-mutation fuzz (post-Batch-2), food as
+  a tag (effects era).
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in
