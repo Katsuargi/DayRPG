@@ -19,6 +19,7 @@ os.environ["DAY_SCHEDULER_CONTENT_DIR"] = str(_FIXTURE)
 
 import content  # noqa: E402
 from check_live import run_live_check  # noqa: E402
+import game_core  # noqa: E402
 from game_core import (  # noqa: E402
     ACTION_LABELS,
     ACTION_ORDER,
@@ -295,6 +296,33 @@ try:
         for p in probs
     ), probs
 
+    # (k4) food tiers: positive int or absent, and at least one food
+    # exists (Rest/Sleep eat best-first — Batch 5)
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    items = json.loads((_tmp / "items.json").read_text(encoding="utf-8"))
+    items[0]["food"] = 0
+    (_tmp / "items.json").write_text(
+        json.dumps(items, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None
+    assert any(
+        p.startswith("items.json: 'berries':") and "'food'" in p
+        for p in probs
+    ), probs
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+    items = json.loads((_tmp / "items.json").read_text(encoding="utf-8"))
+    del items[0]["food"]
+    (_tmp / "items.json").write_text(
+        json.dumps(items, indent=2), encoding="utf-8"
+    )
+    bundle, probs = content.try_load_content(_tmp)
+    assert bundle is not None
+    assert any(
+        "at least one item must declare 'food'" in p for p in probs
+    ), probs
+    shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
+
     # (l) tool-bonus wiring: item tag must name an action; a craft
     # pattern id must be an inventory item (tools are items now)
     shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
@@ -496,7 +524,10 @@ assert any(lbl == "Berries" and 2 <= d <= 4 for lbl, d in gf.changes), gf.change
 gw = results[1]
 assert any(lbl == "Wood" and 1 <= d <= 3 for lbl, d in gw.changes), gw.changes
 rest = results[2]
-assert ("Berries", -1) in rest.changes, rest.changes   # rest ate 1 food
+# rest ate to full recovery (Batch 5): >= 1 berry, hunger driven to 0 —
+# the count is state-dependent (this day's hunger ran high), the rule isn't
+assert any(lbl == "Berries" and d < 0 for lbl, d in rest.changes), rest.changes
+assert e.hunger == 0 and e.energy == e.MAX_VITAL, rest.changes
 assert any(lbl == "Energy" and d > 0 for lbl, d in rest.changes), rest.changes
 
 summary = e.build_summary()
@@ -508,6 +539,45 @@ report = e.complete_day()
 assert e.day == 2 and report.new_day == 2
 assert e.inventory[FOOD_ITEM] == berries_before - 1  # sleep ate 1 food
 print("Sleep:", report.note, "->", format_changes(report.changes))
+assert e.hunger == 0, "food sleep recovers fully (Batch 5)"
+
+# --- Batch 5: best-first eating, eat-to-recovery, tier downgrade ------------
+munch = GameEngine(seed=5)
+munch.EVENT_CHANCE = 0.0
+_orig_foods = game_core.FOOD_ITEMS
+try:
+    game_core.FOOD_ITEMS = ("herbs", "berries")  # herbs is the finer fare
+    munch.inventory["herbs"] = 1
+    munch.inventory["berries"] = 10
+    munch.health, munch.energy, munch.hunger = 50, 50, 20
+    ok, note = munch._apply_rest("rest")
+    assert ok and note == "you ate herbs and rested properly.", note
+    assert munch.inventory["herbs"] == 0, "finer food goes first"
+    assert munch.inventory["berries"] == 7, munch.inventory  # +3 downgrade
+    assert (munch.health, munch.energy, munch.hunger) == (
+        munch.MAX_VITAL, munch.MAX_VITAL, 0), "ate until fully recovered"
+
+    # shortfall: recovery stops only when the larder is bare
+    short = GameEngine(seed=6)
+    short.inventory["herbs"] = 0
+    short.inventory["berries"] = 2
+    short.health, short.energy, short.hunger = 50, 50, 20
+    short._apply_rest("rest")
+    assert short.inventory["berries"] == 0
+    assert short.energy == short.MAX_VITAL and short.hunger == 0
+    assert short.health < short.MAX_VITAL, "partial recovery = food ran out"
+
+    # no waste: an already-recovered character ignores the pantry
+    full = GameEngine(seed=7)
+    full.health, full.energy, full.hunger = (
+        full.MAX_VITAL, full.MAX_VITAL, 0)
+    full.inventory["herbs"] = 0
+    full.inventory["berries"] = 5
+    ok, note = full._apply_rest("rest")
+    assert ok and "untouched" in note, note
+    assert full.inventory["berries"] == 5, "no eating when already full"
+finally:
+    game_core.FOOD_ITEMS = _orig_foods
 
 # --- Engine: slot ordering is enforced ------------------------------------
 e.begin_day()
@@ -766,8 +836,10 @@ assert "Keeps the weather out" in finished.note   # description surfaces
 assert "lean_to" not in [p.id for p in bok.patterns_for(BUILD)]  # owned
 bok.health, bok.energy = 50, 50
 rested = bok.run_slot(1)                   # rest, 2 berries on hand
-assert ("Health", 16) in rested.changes    # 15 * 1.1 -> 16
-assert ("Energy", 27) in rested.changes    # 25 * 1.1 -> 27
+# eat-to-recovery (Batch 5): 2 berries × floor(25/15 × 1.1) each —
+# health 50→82 (+32), energy 50→100 capped (+50); larder dry after
+assert ("Health", 32) in rested.changes, rested.changes
+assert ("Energy", 50) in rested.changes, rested.changes
 
 # --- Wood Axe: craft it, then +1 wood per gather ---------------------------
 ax = GameEngine(seed=35)

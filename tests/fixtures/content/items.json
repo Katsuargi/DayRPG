@@ -3,7 +3,8 @@
     "id": "berries",
     "name": "Berries",
     "start": 2,
-    "tooltip": "Food. Resting and sleeping eat one to restore health and energy."
+    "food": 1,
+    "tooltip": "Food. Rest and Sleep eat it to recover."
   },
   {
     "id": "wood",

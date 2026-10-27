@@ -109,6 +109,7 @@ SCHEMA: Dict[str, dict] = {
             "name": "string",
             "start": "int",
             "tooltip": ("opt", "string"),
+            "food": ("opt", "int"),
             "tool_bonus": ("opt", ("pair", ("ref", "actions"), "int")),
         },
     },
@@ -376,6 +377,14 @@ def _check_items(items: Any, problems: List[str]) -> Set[str]:
             problems.append(f"{where}: 'start' must be an integer >= 0")
         if "tooltip" in rec and not isinstance(rec["tooltip"], str):
             problems.append(f"{where}: 'tooltip' must be a string")
+        if "food" in rec and (
+                type(rec["food"]) is not int or rec["food"] < 1):
+            problems.append(
+                f"{where}: 'food' must be an integer >= 1 (quality tier)")
+    if not any(isinstance(rec, dict) and "food" in rec for rec in items):
+        problems.append(
+            "items.json: at least one item must declare 'food' "
+            "(Rest/Sleep eat foods, best tier first)")
     return ids
 
 

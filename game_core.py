@@ -264,12 +264,23 @@ SLEEP_EMPTY_HEALTH = CONTENT.balance["SLEEP_EMPTY_HEALTH"]
 SLEEP_EMPTY_ENERGY = CONTENT.balance["SLEEP_EMPTY_ENERGY"]
 
 # --- Items --------------------------------------------------------------
-# FOOD_ITEM/WOOD_ITEM are code-side behavior anchors (rest and sleep eat
-# FOOD_ITEM); their values are content ids (slugs), checked by
+# FOOD_ITEM/WOOD_ITEM are code-side behavior anchors (Rest/Sleep eat any
+# item tagged `food`, best tier first — FOOD_ITEM stays the canonical
+# starting food); their values are content ids (slugs), checked by
 # validate_content().
 
 FOOD_ITEM = "berries"
 WOOD_ITEM = "wood"
+
+#: Foods in eating order: best quality tier first; ties keep the
+#: content-file order (Batch 5 — a tier drains before downgrading).
+FOOD_ITEMS: Tuple[str, ...] = tuple(
+    iid for _tier, iid in sorted(
+        ((entry["food"], entry["id"]) for entry in CONTENT.items
+         if type(entry.get("food")) is int),
+        key=lambda pair: -pair[0],  # stable: equal tiers keep file order
+    )
+)
 
 #: Inventory rendering / accounting order (= content/items.json order).
 ITEM_ORDER: Tuple[str, ...] = tuple(entry["id"] for entry in CONTENT.items)
@@ -1101,14 +1112,36 @@ class GameEngine:
             found.append(pattern)
         return found
 
+    def _eat_until_recovered(
+        self, health_add: int, energy_add: int, hunger_add: int
+    ) -> List[str]:
+        """Batch 5: eat best-tier-first until the food-recoverable stats
+        are saturated (health/max, energy/max, hunger/0). Each tier is
+        drained before downgrading; returns eaten ids in order — empty
+        means already satisfied or a bare larder (the shortfall only the
+        player's pantry can cause)."""
+        eaten: List[str] = []
+        for item_id in FOOD_ITEMS:
+            while (self.inventory.get(item_id, 0) > 0
+                   and not (self.health >= self.MAX_VITAL
+                            and self.energy >= self.MAX_VITAL
+                            and self.hunger <= 0)):
+                self.inventory[item_id] -= 1
+                eaten.append(item_id)
+                self.health = clamp(self.health + self._recovery(health_add))
+                self.energy = clamp(self.energy + self._recovery(energy_add))
+                self.hunger = clamp(self.hunger + hunger_add)
+        return eaten
+
     def _apply_rest(self, _action_id: str) -> Tuple[bool, str]:
         """Rest never fails; returns (True, note) for the behavior dispatch."""
-        if self.inventory[FOOD_ITEM] > 0:
-            self.inventory[FOOD_ITEM] -= 1
-            self.health = clamp(self.health + self._recovery(REST_FOOD_HEALTH))
-            self.energy = clamp(self.energy + self._recovery(REST_FOOD_ENERGY))
-            self.hunger = clamp(self.hunger + REST_FOOD_HUNGER_NET)
-            return True, "you ate a berry and rested properly."
+        if any(self.inventory.get(item, 0) > 0 for item in FOOD_ITEMS):
+            eaten = self._eat_until_recovered(
+                REST_FOOD_HEALTH, REST_FOOD_ENERGY, REST_FOOD_HUNGER_NET)
+            if eaten:
+                name = ITEM_NAMES.get(eaten[0], eaten[0]).lower()
+                return True, f"you ate {name} and rested properly."
+            return True, "you were already rested — supplies untouched."
         self.health = clamp(self.health + self._recovery(REST_EMPTY_HEALTH))
         self.energy = clamp(self.energy + self._recovery(REST_EMPTY_ENERGY))
         self.hunger = clamp(self.hunger + REST_EMPTY_HUNGER)
@@ -1117,12 +1150,12 @@ class GameEngine:
     def _apply_sleep(self) -> str:
         # The night passes whether or not there is food.
         self.hunger = clamp(self.hunger + SLEEP_HUNGER_NIGHT)
-        if self.inventory[FOOD_ITEM] > 0:
-            self.inventory[FOOD_ITEM] -= 1
-            self.health = clamp(self.health + self._recovery(SLEEP_FOOD_HEALTH))
-            self.energy = clamp(self.energy + self._recovery(SLEEP_FOOD_ENERGY))
-            self.hunger = clamp(self.hunger + SLEEP_FOOD_HUNGER_NET)
-            return "you ate before bed and slept soundly."
+        if any(self.inventory.get(item, 0) > 0 for item in FOOD_ITEMS):
+            eaten = self._eat_until_recovered(
+                SLEEP_FOOD_HEALTH, SLEEP_FOOD_ENERGY, SLEEP_FOOD_HUNGER_NET)
+            if eaten:
+                return "you ate before bed and slept soundly."
+            return "you slept soundly — no food needed."
         self.health = clamp(self.health + self._recovery(SLEEP_EMPTY_HEALTH))
         self.energy = clamp(self.energy + self._recovery(SLEEP_EMPTY_ENERGY))
         return "you slept on an empty stomach and woke up weak."

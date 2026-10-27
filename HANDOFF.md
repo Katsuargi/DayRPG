@@ -221,10 +221,20 @@ Ordered; phases have one concern each (a failure has one suspect).
   `from_dict` + `__dict__` update, so partial slot effects are undone
   and the rewound RNG replays the aborted day identically —
   double-dip closed, with state-equality + replay regression tests.
-  **Batch 5 scheduled (user
-  request): generalized eating** — a `food` flag on items, Rest/Sleep
-  eat any flagged item with honest "you ate X" text, validation +
-  tests + guide updates, so more foods can be looped in later.
+  **Batch 5 done (user-specified rules): generalized eating** — items
+  gain an opt `food` quality tier (validated: positive int; ≥1 food
+  required set-wide); `game_core.FOOD_ITEMS` orders foods best-tier
+  first (ties keep file order); shared `_eat_until_recovered` drains
+  each tier before downgrading until health/energy/hunger saturate —
+  shortfall only on a bare larder, zero waste when already recovered
+  (each edge with its own message; Rest's note is item-driven: "you
+  ate berries..."). Berries ships `food: 1` + honest tooltip (live +
+  fixture re-pin); the guide's fish recipe ships `food: 2` and the
+  mechanics doc replaced the old "never label Food" warning. Tests:
+  tier-downgrade/shortfall/no-waste (patched FOOD_ITEMS, restored),
+  food-tier validation (k4), and the two state-bound old pins updated
+  to rule-shaped ones (peaceful rest now asserts ate-to-recovery
+  instead of exactly −1; bok's two-berry rest asserts +32/+50).
   Deferred: content-mutation fuzz (after Batch 2).
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
