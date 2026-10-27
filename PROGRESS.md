@@ -33,3 +33,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-23 | Phase 2d forms: layout flag/pane (D14-D15), nested/list/dict_int editors (D16), model-first tests (D17) | f026678 | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-23 | 2d-ops: dict-file record ops + key identity (D18) + fishing full-pass acceptance (D19) | 21c25ed | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-23 | 2e repair flow (D4): line/column + open-external + Run-check dir arg — Phase 2 complete | 94e0d36 | test_smoke + check_live + test_editor_gui + test_content_write green
+- 2026-10-26 | review batch 1: event-DC display + save-dialog/compensation hardening + housekeeping | e05850f | test_smoke + check_live + test_editor_gui + test_content_write green
