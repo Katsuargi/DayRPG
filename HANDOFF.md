@@ -235,7 +235,16 @@ Ordered; phases have one concern each (a failure has one suspect).
   food-tier validation (k4), and the two state-bound old pins updated
   to rule-shaped ones (peaceful rest now asserts ate-to-recovery
   instead of exactly −1; bok's two-berry rest asserts +32/+50).
-  Deferred: content-mutation fuzz (after Batch 2).
+  **Content-mutation fuzz done (the last deferred item):**
+  `check_fuzz.py` — 19 deterministic variants (5 known-bad GUARDS that
+  must stay blocked + 14 legal-weird plays: die/XP/event extremes,
+  empty lists, absent optionals, plain templates, skill-null gather,
+  one action per behavior), each run against a mutated copy of the LIVE
+  content in a fresh child process, playing 5 seeded days with
+  check_live's invariants. Spawned by test_smoke (D6), standalone via
+  `python check_fuzz.py [dir]`. First-run "13 findings" were one
+  harness bug (planning after `begin_day`) — final: 13 played / 6
+  blocked / 0 findings. Nothing on the review list remains deferred.
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

@@ -559,6 +559,13 @@ goldens.
 - **Tune-in-test constants are class-attribute mirrors** (`EVENT_CHANCE`,
   `ACTION_DIFFICULTY`, `RANDOM_EVENTS`) — override per instance in tests;
   never edit the class or module values.
+- **`python check_fuzz.py`** is the engine-vs-content net: it mutates
+  editable fields into the validator-legal space (floats where ints
+  belong, extra actions per behavior, empty lists, absent optionals)
+  and plays seeded days per variant in fresh child processes — catching
+  the "validation passed but the engine can't use it" class that unit
+  mutations can't. Guard variants pin known-bad classes as MUST-FAIL.
+  Spawned by test_smoke; standalone: `python check_fuzz.py [dir]`.
 - **Run `validate_content()`** (or just `python test_smoke.py`) — the
   schema/reference half lives in `content.py` and runs at every load;
   the engine half checks the default plan, code item anchors, the

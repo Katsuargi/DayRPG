@@ -1112,3 +1112,13 @@ assert _spawn.returncode == 0, (
     "test_content_write.py failed:\n" + _spawn.stdout + _spawn.stderr
 )
 print("test_content_write.py OK")
+
+# --- Content fuzz: validator-legal variants must not crash the engine --------
+_spawn = subprocess.run(
+    [sys.executable, str(_ROOT / "check_fuzz.py")],
+    capture_output=True, text=True, cwd=str(_ROOT),
+)
+assert _spawn.returncode == 0, (
+    "check_fuzz.py failed:\n" + _spawn.stdout + _spawn.stderr
+)
+print("check_fuzz.py OK")
