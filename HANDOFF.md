@@ -245,6 +245,20 @@ Ordered; phases have one concern each (a failure has one suspect).
   `python check_fuzz.py [dir]`. First-run "13 findings" were one
   harness bug (planning after `begin_day`) — final: 13 played / 6
   blocked / 0 findings. Nothing on the review list remains deferred.
+  **Design lint (check_design.py) shipped — advisory by the user's
+  call:** warnings print, exit 0 is unconditional (taste never fails a
+  build while the guidelines are still forming); only a crash of the
+  lint itself is nonzero and test_smoke asserts THAT, so code rot can't
+  hide. v1 rules (engine-free, Problem-shaped findings for a future
+  editor surface): unobtainable items (the stone/herbs placeholders —
+  expected, visible every suite run), untrained skills (demanders
+  listed — a progression-dead-end detector), pattern-kind coverage,
+  duplicate display names, and one tagged pacing heuristic
+  (EVENT_CHANCE > 0.5). One guideline = one function appended to
+  `RULES`; engine-curve analysis (XP achievability, DC sanity) is the
+  planned engine-aware upgrade once design guidelines firm up.
+  Spawned by test_smoke with output echoed; standalone:
+  `python check_design.py [dir]`.
 - **Viewer nitpick #1 (completed difficulty):** every check site now
   takes an optional record-level `difficulty` — patterns and events
   gained it (gather already had its block field); the globals in

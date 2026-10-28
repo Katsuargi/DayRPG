@@ -1122,3 +1122,13 @@ assert _spawn.returncode == 0, (
     "check_fuzz.py failed:\n" + _spawn.stdout + _spawn.stderr
 )
 print("check_fuzz.py OK")
+
+# --- Design lint: advisory warnings (never fails — guidelines still forming)
+_spawn = subprocess.run(
+    [sys.executable, str(_ROOT / "check_design.py")],
+    capture_output=True, text=True, cwd=str(_ROOT),
+)
+assert _spawn.returncode == 0, (
+    "check_design.py crashed:\n" + _spawn.stdout + _spawn.stderr
+)
+print(_spawn.stdout, end="")

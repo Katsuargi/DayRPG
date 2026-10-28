@@ -566,6 +566,12 @@ goldens.
   the "validation passed but the engine can't use it" class that unit
   mutations can't. Guard variants pin known-bad classes as MUST-FAIL.
   Spawned by test_smoke; standalone: `python check_fuzz.py [dir]`.
+- **`python check_design.py`** is the *advisory* content lint: prints
+  warnings (unobtainable items, untrained skills, missing pattern
+  kinds, ambiguous names, pacing heuristics) and **always exits 0** —
+  while the design guidelines are still forming, taste informs but
+  never fails the build. One rule = one function in `RULES`; findings
+  are Problem-shaped for a future editor surface.
 - **Run `validate_content()`** (or just `python test_smoke.py`) — the
   schema/reference half lives in `content.py` and runs at every load;
   the engine half checks the default plan, code item anchors, the
