@@ -39,3 +39,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-26 | review batch 4: abort_day snapshot rewind — no double-dip, identical replay | 4dd66a1 | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-26 | review batch 5: generalized eating — food tiers, best-first eat-to-recovery | 64d3ea3 | test_smoke + check_live + test_editor_gui + test_content_write green
 - 2026-10-26 | content-mutation fuzz: check_fuzz.py (19 variants, child-process gate) | ea7dad6 | test_smoke + check_live + test_editor_gui + test_content_write + check_fuzz green
+- 2026-10-26 | design lint (advisory): check_design.py, 5 rules, always exit 0 | 35f173e | full suite green + 2 advisory warnings visible
