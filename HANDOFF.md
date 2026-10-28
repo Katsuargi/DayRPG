@@ -73,6 +73,13 @@ design, so its inventory line varies per run — that's expected.
 
 Ordered; phases have one concern each (a failure has one suspect).
 
+- **Effects-layer planning lives in `EFFECTS_BRIEF.md`** (DRAFT,
+  2026-10-26): every hook/RNG-draw/save/balance fact verified with
+  file:line, draft slicing E1–E5, open decisions D1–D6 awaiting the
+  stronger-model review round; small side questions with suggested
+  defaults in `OPEN_QUESTIONS.md`. No effects code exists yet —
+  deliberately (write the prep, review, then implement).
+
 ### Next: editor (phases 2+), then deferred design work
 
 - **Phase 2 planning lives in `EDITOR_BRIEF.md`** — sliced 2a–2e
