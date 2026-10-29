@@ -35,3 +35,20 @@ for the rest.
    change — consistent with the existing identity gate
    (game_core.py:786-790) and the deliberate golden re-pin rule
    (DEV_GUIDE.md:482-490).
+
+## Answers (round-2 reconciliation, 2026-10-28)
+
+1. **Registry location: `content.py`, as suggested** — `TRIGGERS`/
+   `VITALS`/`EFFECT_TYPES`/`LEGAL_EFFECTS` next to `BEHAVIOR_HANDLERS`;
+   validation in a new `_check_effects` called from `validate_bundle`
+   (plan R9 accepted; brief N1 extends it with the legality table).
+2. **Editable rows land in slice E5, ordered *before* E4** (brief
+   binding section: final order E1→E2→E3→E5→E4) — authoring usability
+   before item-system cleanup; E4's own GUI-test step depends on E5.
+3. **Single `effects` list of `{"type": ...}` entries kept** — the
+   split `passive`/`trigger` alternative was rejected (plan
+   constraint-3 challenge ruling: one list, one rendering path, one
+   validation path; `when` distinguishes triggers).
+4. **Save policy stands; v1 needs no version bump at all** — effects
+   are stateless (no new `to_dict` fields, no golden re-pin; brief
+   D6).

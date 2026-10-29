@@ -73,12 +73,14 @@ design, so its inventory line varies per run — that's expected.
 
 Ordered; phases have one concern each (a failure has one suspect).
 
-- **Effects-layer planning lives in `EFFECTS_BRIEF.md`** (DRAFT,
-  2026-10-26): every hook/RNG-draw/save/balance fact verified with
-  file:line, draft slicing E1–E5, open decisions D1–D6 awaiting the
-  stronger-model review round; small side questions with suggested
-  defaults in `OPEN_QUESTIONS.md`. No effects code exists yet —
-  deliberately (write the prep, review, then implement).
+- **Effects-layer planning is reconciled (round 2, 2026-10-28).**
+  `EFFECTS_BRIEF.md` opens with the **binding decisions**: ship order
+  E1→E2→E3→E5→E4 (E4 optional), D1–D8 decided, requirements N1–N5
+  (legality table, generic-path penalty kept, `grant_xp.key` rules,
+  reporting contract + test, clean retirements). Per-slice steps and
+  worked JSON live in `EFFECTS_PLAN_DEEPSEEK.md` (its banner lists the
+  superseded passages). No effects code exists yet — next step is E1
+  (registry + validation + read-only display, zero behavior change).
 
 ### Next: editor (phases 2+), then deferred design work
 

@@ -11,6 +11,25 @@ Recommendations are numbered R1..Rn; per-slice implementation steps are
 S1..Sn inside each slice. Each recommendation/step is independently
 accept/modify/reject-able.
 
+> **STATUS (2026-10-28): reconciled — binding rulings live in
+> `EFFECTS_BRIEF.md` §"Binding decisions (round-2 reconciliation)".**
+> Ship order changed to **E1 → E2 → E3 → E5 → E4** (E4 optional) — the
+> brief's binding section explains why; this plan's §1/R1/R2 and the
+> E4/E5 labels keep their original order for citation, but implement in
+> the brief's order. Superseded passages (kept here for provenance):
+> §2 **D1** headline + §3.2 `recovery_bonus.stack: "max"` (decided:
+> **sum** — §4.1/E2-S3's applier text was the right half); §2 **D3**/R4
+> (only `LEAN_TO_RECOVERY_BONUS` retires; `EVENT_FAILURE_HEALTH` stays
+> as the generic-path penalty — brief N2); §2 **D4** (decided: text is
+> **generated** from type+params with an optional `text` override —
+> brief D4); §3.2 `VITALS` (hunger **cut** from v1 — brief D8);
+> `grant_xp.key` needs a kind-keyed dyn_ref plus imperative rules
+> (brief N3); §5 **E3**'s "see R12" is a dangling reference — the real
+> reporting contract is brief N4; and the plan lacks a **legality
+> table** (record kind × effect type × trigger) that gates every slice
+> (brief N1). Everything else stands, including R12–R18 and the
+> constraint-3 challenge ruling.
+
 ---
 
 ## 1. Slicing (my version; the draft E1–E5 is re-sliced)
