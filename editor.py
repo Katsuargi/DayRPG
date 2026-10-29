@@ -21,9 +21,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from content import (CONTENT_FILES, SCHEMA, EFFECT_TYPES, collect_references,
-                     ContentError, StaleWriteError, effect_text, save,
-                     try_load_content_with_state, validate_bundle)
+from content import (CONTENT_FILES, SCHEMA, EFFECT_TYPES, LEGAL_EFFECTS,
+                     collect_references, ContentError, StaleWriteError,
+                     effect_text, save, try_load_content_with_state,
+                     validate_bundle)
 
 BANNER_BG = "#8b1a1a"
 FLASH_BG = "#ffe39a"
@@ -270,6 +271,33 @@ class ContentViewer:
                 else:
                     tree.insert(node, "end", text="(not an object)",
                                 values=(f"{value!r} ⚠",))
+                continue
+            if (isinstance(spec, tuple) and spec[0] == "list"
+                    and isinstance(spec[1], tuple)
+                    and spec[1][0] == "effect"):
+                # E5: effect numbers reach the wholesale sheet — one
+                # node per entry, numeric params as leaves (no reorder)
+                if isinstance(value, list):
+                    node = tree.insert(parent, "end", text=field,
+                                       values=("",), open=True)
+                    for i, entry in enumerate(value):
+                        if not isinstance(entry, dict):
+                            tree.insert(node, "end", text=f"{i + 1}. ⚠",
+                                        values=(f"{entry!r}",))
+                            continue
+                        enode = tree.insert(
+                            node, "end",
+                            text=f"{i + 1}. {entry.get('type', '?')}",
+                            values=("",), open=True)
+                        for pname, pspec in EFFECT_TYPES.get(
+                                entry.get("type", ""), {}).items():
+                            if (pname == "stack"
+                                    or not isinstance(pspec, str)
+                                    or pspec not in ("int", "number")
+                                    or pname not in entry):
+                                continue
+                            tree.insert(enode, "end", text=pname,
+                                        values=(entry[pname],))
                 continue
             shown = None
             if isinstance(spec, str) and spec in ("int", "number"):
@@ -1138,11 +1166,10 @@ class RecordForm:
             self._add_nested(row, field, spec, value, was_opt, present)
             return
         if isinstance(spec, tuple) and spec[0] == "list":
-            # effects (the ("effect", None) member) render read-only in
-            # E1 — editable rows land with E5, and _add_list's ↑↓ chrome
-            # would break order-is-data anyway (plan R17)
+            # effects (the ("effect", None) member) get the E5 editor:
+            # type-driven param rows, no ↑↓ (order-is-data, plan R17)
             if (isinstance(spec[1], tuple) and spec[1][0] == "effect"):
-                self._add_effects_readonly(row, value, present)
+                self._add_effect_list(row, field, spec, value, was_opt)
                 return
             self._add_list(row, field, spec, value, was_opt)
             return
@@ -1161,23 +1188,160 @@ class RecordForm:
         tk.Label(row, anchor="w", fg=MUTED_FG,
                  text="  (no editor for this spec)").pack(side="left")
 
-    def _add_effects_readonly(self, row, value, present) -> None:
-        """E1: effects render as one generated read-only line (editable
-        rows land with E5). Absent stays absent — opening a form must
-        never materialize the field (no bundle mutation on mount)."""
-        if not present or not value:
-            text = "— absent"
-        elif not isinstance(value, list):
-            text = f"{value!r} ⚠ not a list"
-        else:
-            text = "; ".join(
-                self.viewer._value_text(("effect", None), entry, self.fname)
-                for entry in value) or "— empty list"
-        tk.Label(row, anchor="w", text=text).pack(side="left")
-        if isinstance(value, list) and value:
-            tk.Label(row, anchor="w", fg=MUTED_FG,
-                     text="  (read-only — editing arrives with E5)"
-                     ).pack(side="left")
+    def _add_effect_list(self, row, field, spec, value, was_opt) -> None:
+        """E5: editable effect rows (plan S1; bindings R17/N1/D4).
+
+        One row per entry: a type combobox + param widgets via the
+        shared `_member` (enum/ref scalars; grant_xp.key tracks `kind`
+        through the dyn_ref sibling filter — N3), a generated preview
+        (D4 `effect_text`), and remove/add — NO ↑↓ (order is data,
+        constraint 4: mirrors `_add_dict_int`). `rowvars[field]` is a
+        dict of variables PER entry (params differ by type), D17
+        write-through on every edit; mounting never mutates (traces
+        attach after initial values). Entries rebuild canonically on
+        write; an existing entry gains an explicit `when` on first save
+        (explicit beats inferred — D8). The add button offers only
+        types LEGAL for this record (N1) and disappears when none are
+        (items pre-E4) or the record forbids effects (check:false
+        events). A type swap reseeds that entry's params from the new
+        type's defaults."""
+        entries = list(value) if isinstance(value, list) else []
+        legal = LEGAL_EFFECTS.get(self.fname, {})
+        record_ok = not (self.fname == "events"
+                         and self.record.get("check") is False)
+        container = tk.Frame(row)
+        container.pack(side="left", fill="x", expand=True)
+        previews: list[tk.Label] = []
+
+        def default_when(etype: str) -> str:
+            allowed = legal.get(etype, ())
+            # on_failure first so an auto-added entry on a check:true
+            # event satisfies N2 immediately
+            if "on_failure" in allowed:
+                return "on_failure"
+            return allowed[0] if allowed else "always"
+
+        def effect_vars(entry: dict) -> dict:
+            etype = entry.get("type") or next(iter(legal), "")
+            rv: dict = {"type": self._svar(etype)}
+            for pname, pspec in EFFECT_TYPES.get(etype, {}).items():
+                if pname == "stack":
+                    continue
+                if pname in entry:
+                    rv[pname] = self._svar(entry[pname])
+                elif pname == "when":
+                    rv["when"] = self._svar(default_when(etype))
+                else:
+                    rv[pname] = self._svar(self._default_element(pspec))
+            rv["text"] = self._svar(entry.get("text", ""))
+            return rv
+
+        self.rowvars[field] = [effect_vars(e) for e in entries]
+
+        def built(rv: dict) -> dict:
+            out = {"type": rv["type"].get()}
+            for pname, pspec in EFFECT_TYPES.get(out["type"], {}).items():
+                if pname == "stack" or pname not in rv:
+                    continue
+                text = rv[pname].get()
+                if pname != "when" and text == "":
+                    continue  # empties omitted; validation names them
+                out[pname] = self._coerce_member(pspec, text)
+            if rv.get("text") is not None and rv["text"].get():
+                out["text"] = rv["text"].get()
+            return out
+
+        def write(*_a):
+            built_list = [built(rv) for rv in self.rowvars[field]]
+            if was_opt and not built_list:
+                self.record.pop(field, None)
+            else:
+                self.record[field] = built_list
+            for lbl, entry in zip(previews, built_list):
+                lbl.config(text=effect_text(entry))
+            self._changed()
+
+        def attach(i: int, rv: dict) -> None:
+            rv["type"].trace_add(
+                "write", lambda *_a, i=i: on_type_change(i))
+            for pname, v in rv.items():
+                if pname != "type":
+                    v.trace_add("write", write)
+
+        def on_type_change(i: int) -> None:
+            # swap reseeds params from the new type's defaults, then
+            # re-renders and write-throughs — stale param vars never
+            # reach the record (built() iterates the NEW type anyway)
+            old = self.rowvars[field][i]
+            etype = old["type"].get()
+            fresh: dict = {"type": old["type"]}
+            for pname, pspec in EFFECT_TYPES.get(etype, {}).items():
+                if pname == "stack":
+                    continue
+                if pname == "when":
+                    fresh["when"] = self._svar(default_when(etype))
+                else:
+                    fresh[pname] = self._svar(self._default_element(pspec))
+            fresh["text"] = self._svar("")
+            self.rowvars[field][i] = fresh
+            for pname, v in fresh.items():
+                if pname != "type":
+                    v.trace_add("write", write)
+            rebuild()
+            write()
+
+        def rebuild() -> None:
+            for child in container.winfo_children():
+                child.destroy()
+            previews.clear()
+            rows = self.rowvars[field]
+            for i, rv in enumerate(rows):
+                line = tk.Frame(container)
+                line.pack(fill="x")
+                self._member(line, ("enum", tuple(EFFECT_TYPES)),
+                             rv["type"])
+                for pname, pspec in EFFECT_TYPES.get(
+                        rv["type"].get(), {}).items():
+                    if pname == "stack" or pname not in rv:
+                        continue
+                    self._member(line, pspec, rv[pname],
+                                 sibling=rv.get("kind"))
+                lbl = tk.Label(line, fg=MUTED_FG,
+                               text=effect_text(built(rv)))
+                lbl.pack(side="left", padx=(6, 0))
+                previews.append(lbl)
+                tk.Button(line, text="✕", width=2,
+                          command=lambda i=i: remove(i)).pack(
+                    side="left", padx=(6, 1))
+            if legal and record_ok:
+                tk.Button(container, text="+ add effect",
+                          command=add).pack(anchor="w")
+            elif not record_ok:
+                tk.Label(container, fg=MUTED_FG, text=(
+                    "  (check:false events cannot declare effects)"
+                )).pack(anchor="w")
+            elif not legal:
+                tk.Label(container, fg=MUTED_FG, text=(
+                    "  (no legal effect types for this file yet)"
+                )).pack(anchor="w")
+
+        def remove(i: int) -> None:
+            self.rowvars[field].pop(i)
+            rebuild()
+            write()
+
+        def add() -> None:
+            if not legal:
+                return
+            rv = effect_vars({})
+            self.rowvars[field].append(rv)
+            attach(len(self.rowvars[field]) - 1, rv)
+            rebuild()
+            write()
+
+        for i, rv in enumerate(self.rowvars[field]):
+            attach(i, rv)
+        rebuild()
 
     def _add_scalar(self, row, field, kind, value, was_opt, *,
                     readonly=False) -> None:

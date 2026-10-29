@@ -275,7 +275,7 @@ serialized per the persistence recipe (`DEV_GUIDE.md:471-479`).
   (`content.py:210-232` for items) — effect params vary by type, so
   E1's read-only display and E4's editable rows both need a new typed
   effect-list spec tag plus matching editor branches (the Tunables
-  sheet has no `list` branch either, `editor.py:259-284`).
+  sheet has no `list` branch either, `editor.py:260-312`).
 
 
 ### Which balance entries would move onto records (if numbers relocate)
@@ -307,13 +307,13 @@ records (`game_core.py:95-97`, scanned `:1095-1099`), per-record
 since E2 — `recovery_bonus` on the lean_to pattern.
 
 **Tunables impact** (the editor's aggregate sheet,
-`editor.py:236-284`): it walks SCHEMA and shows every int/number
-scalar, pair, and dict_int value, recurses `nested` blocks (`:265-269`),
-and renders absent difficulty as "(global)" (`:276-277`). Consequences
+`editor.py:237-312`): it walks SCHEMA and shows every int/number
+scalar, pair, and dict_int value, recurses `nested` blocks (`:266-270`),
+and renders absent difficulty as "(global)" (`:304-305`). Consequences
 for effects: (a) a number moved onto a record appears in Tunables
-automatically — zero editor work; (b) **there is no `list` branch** in
-`_tune_rows` (`:259-284`), so an `effects: [...]` list stays invisible
-to Tunables until a slice adds that branch.
+automatically — zero editor work; (b) since **E5**, `_tune_rows` has an
+`effects` branch (`:275-301`) — one node per entry, numeric params as
+leaves — so effect numbers reach the wholesale sheet too.
 
 ## Draft slicing E1–E5 (DRAFT — reviewers may re-slice, merge, or kill)
 
@@ -342,7 +342,7 @@ to Tunables until a slice adds that branch.
   D16 list machinery **plus** the new spec tag's widget branch (the
   existing list machinery is pair/dict_int-shaped — see the
   review-facts section); Tunables gains the missing `list` branch
-  (`editor.py:259-284`); `check_design` gains registry-aware rules.
+  (`editor.py:260-312`); `check_design` gains registry-aware rules.
 - **E5 — Shared-state foundation (placeholder).** Whatever NPC
   relationships/merchant stock need: persistence shape, session-vs-
   content split, save-version impact. Deliberately last and

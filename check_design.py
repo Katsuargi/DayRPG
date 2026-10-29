@@ -35,19 +35,21 @@ Rule = Callable[[Any], List[str]]  # (bundle) -> warning strings
 
 def _unobtainable_items(bundle: Any) -> List[str]:
     """An item nothing ever grants: no start stock, no gather yield,
-    no craft pattern output. (Known placeholders: stone, herbs.)"""
+    no craft pattern output, no event effect grants it. (Known
+    placeholders: stone, herbs.)"""
     sources = {rec["id"] for rec in bundle.items
                if isinstance(rec, dict) and isinstance(rec.get("start"), int)
                and rec["start"] > 0}
     sources |= {edge[4] for edge in collect_references(bundle)
-                if edge[3] == "items" and edge[2] == "gather.item"}
+                if edge[3] == "items"
+                and edge[2] in ("gather.item", "effects.grant_item.item")}
     sources |= {pid for pid, pat in bundle.patterns.items()
                 if isinstance(pat, dict) and pat.get("kind") == "craft"}
     item_ids = [rec["id"] for rec in bundle.items
                 if isinstance(rec, dict) and isinstance(rec.get("id"), str)]
     return [
         f"items.json: {iid!r} has no source — no start stock, no gather "
-        "yields it, no craft pattern outputs it"
+        "yields it, no craft pattern outputs it, no event grants it"
         for iid in item_ids if iid not in sources
     ]
 

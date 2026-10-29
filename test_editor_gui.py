@@ -508,7 +508,8 @@ try:
     _btn("+ material").invoke()
     assert len(pform.rowvars["materials"]) == n_mats + 1, \
         "an empty-key row waits for its key (no phantom collapse)"
-    _btn("✕", -1).invoke()
+    _btn("✕", n_mats).invoke()  # materials ✕s trail from 0; effects' ✕
+    # comes last (E5), so "last" would remove the wrong row
     assert len(pform.rowvars["materials"]) == n_mats
     _btn("+ material").invoke()
     existing = set(viewer.bundle.patterns[p_id]["materials"])
@@ -791,10 +792,11 @@ finally:
 
 print("GUI smoke OK: 2e repair flow + run-check")
 
-# --- E1: effects render read-only (registry slice, no editable rows) --------
-# Generated text (D4) in both the stacked viewer and the record form;
-# no editable widget until E5; mounting never mutates the record; the
-# fixture's own effects validate clean now that E2 enabled the pair.
+# --- E5 (mount check): effects render generated text + editable model --------
+# Generated text (D4) in the stacked viewer; the form registers an
+# editable rowvars model (D17); mounting never mutates the record; the
+# fixture's own effects validate clean (E2 pair). Full edit/save/
+# reload/legality coverage follows in the E5 block below.
 tmp5 = Path(tempfile.mkdtemp(prefix="effects_"))
 try:
     for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
@@ -810,14 +812,14 @@ try:
                if w.winfo_class() == "Label"]
     assert any("+10% recovery" in t for t in stacked), stacked
 
-    # the record form shows a read-only line and registers no editor
+    # E5: the record form registers an editable effects model (D17)
     viewer5._on_edit_toggle("patterns", "lean_to")
     form5 = viewer5._forms[("patterns", "lean_to")]
-    assert "effects" not in form5.vars and "effects" not in form5.rowvars
+    assert "effects" in form5.rowvars and "effects" not in form5.vars
+    assert form5.rowvars["effects"][0]["type"].get() == "recovery_bonus"
     rows = [str(w.cget("text")) for w in _walk(viewer5.records_frame)
             if w.winfo_class() == "Label"]
     assert any("+10% recovery" in t for t in rows), rows  # generated text
-    assert any("(read-only" in t for t in rows), rows     # not editable
     lean = dict(viewer5.bundle.patterns)["lean_to"]
     assert lean["effects"] == [{"type": "recovery_bonus", "mult": 0.1}], \
         "mounting a form must not mutate the record"
@@ -828,4 +830,155 @@ try:
 finally:
     shutil.rmtree(tmp5, ignore_errors=True)
 
-print("GUI smoke OK: E1 effects read-only render")
+print("GUI smoke OK: E1/E5 effects render + editable model mount")
+
+# --- E5: editable rows — edit/type-swap/save/reload/remove/add, gating --------
+tmp6 = Path(tempfile.mkdtemp(prefix="effects5_"))
+_msgs6: list = []
+_real6 = {n: getattr(editor_mod.messagebox, n) for n in
+          ("showerror", "showinfo", "showwarning", "askyesno",
+           "askyesnocancel")}
+
+
+def _rec6(name, ret=None):
+    def _f(*_a, **_k):
+        _msgs6.append(name)
+        return ret
+    return _f
+
+
+try:
+    for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
+        shutil.copy(f, tmp6 / f.name)
+    for n in ("showerror", "showinfo", "showwarning"):
+        setattr(editor_mod.messagebox, n, _rec6(n))
+    editor_mod.messagebox.askyesno = _rec6("askyesno", True)
+    editor_mod.messagebox.askyesnocancel = _rec6("askyesnocancel", True)
+
+    root6, viewer6 = build(tmp6)
+
+    def _btn6(text, which=-1):
+        found = [w for w in _walk(viewer6.records_frame)
+                 if w.winfo_class() == "Button"
+                 and str(w.cget("text")) == text]
+        assert found, f"no {text!r} button"
+        return found[which]
+
+    # 1) type swap reseeds params and surfaces legality live (N1)
+    idx_p6 = list(CONTENT_FILES).index("patterns")
+    viewer6._render_file(idx_p6)
+    viewer6._on_edit_toggle("patterns", "lean_to")
+    f6 = viewer6._forms[("patterns", "lean_to")]
+    rv6 = f6.rowvars["effects"][0]
+    assert rv6["type"].get() == "recovery_bonus"
+    assert rv6["mult"].get() == "0.1"
+    rv6["type"].set("yield_bonus")            # legal on items only (E4)
+    rv6 = f6.rowvars["effects"][0]
+    assert "action" in rv6, "params reseeded for the new type"
+    assert any("not (yet) allowed on patterns records" in p
+               for p in viewer6.problems), viewer6.problems
+    rv6["type"].set("recovery_bonus")
+    rv6 = f6.rowvars["effects"][0]
+    assert viewer6.problems == [], viewer6.problems
+
+    # 2) write-through + generated preview (D4)
+    rv6["mult"].set("0.25")
+    lean6 = dict(viewer6.bundle.patterns)["lean_to"]
+    assert lean6["effects"][0]["mult"] == 0.25, lean6["effects"]
+    assert "patterns" in viewer6.dirty
+    labels6 = [str(w.cget("text")) for w in _walk(viewer6.records_frame)
+               if w.winfo_class() == "Label"]
+    assert any("+25% recovery" in t for t in labels6), labels6
+
+    # 3) save → reload roundtrip through the headless write layer
+    viewer6._on_save()
+    assert viewer6.dirty == set()
+    assert "showerror" not in _msgs6, _msgs6
+    saved6 = json.loads((tmp6 / "patterns.json").read_bytes())
+    assert saved6["lean_to"]["effects"][0]["mult"] == 0.25, saved6
+    viewer6.reload()
+    viewer6._render_file(idx_p6)
+    viewer6._on_edit_toggle("patterns", "lean_to")
+    f6 = viewer6._forms[("patterns", "lean_to")]
+    assert f6.rowvars["effects"][0]["mult"].get() == "0.25"
+
+    # 4) Tunables shows the number (E5 S3): patterns → lean_to → effects
+    viewer6._show_view("tunables")
+    _t6 = viewer6.tunables_tree
+
+    def _f6(parent, label):
+        for node in _t6.get_children(parent):
+            if _t6.item(node, "text") == label:
+                return node
+        return None
+
+    _pnode = _f6("", "patterns.json")
+    _lnode = _f6(_pnode, "lean_to")
+    _enode = _f6(_lnode, "effects")
+    _entry = _f6(_enode, "1. recovery_bonus")
+    _mult = _f6(_entry, "mult")
+    assert _mult is not None and str(_t6.item(_mult, "values")[0]) == "0.25", \
+        "effect numbers missing from Tunables"
+    viewer6._show_view("files")
+
+    # 5) remove pops the optional field; add re-creates with the
+    #    record's legal type (N1) and an explicit trigger (D8).
+    #    (No re-render here: the view round-trip kept the pane form
+    #    mounted, and toggling again would flip it OFF — _render_file
+    #    does not clear _editing, only reload() does.)
+    _x = [w for w in _walk(viewer6.records_frame)
+          if w.winfo_class() == "Button" and str(w.cget("text")) == "✕"]
+    _x[-1].invoke()          # effects is the last patterns field → last ✕
+    lean6 = dict(viewer6.bundle.patterns)["lean_to"]
+    assert "effects" not in lean6, "was_opt field pops when emptied"
+    assert viewer6.problems == [], viewer6.problems
+    _btn6("+ add effect").invoke()
+    lean6 = dict(viewer6.bundle.patterns)["lean_to"]
+    assert lean6["effects"][0]["type"] == "recovery_bonus", lean6
+    assert lean6["effects"][0]["when"] == "always", \
+        "explicit trigger on creation (D8)"
+
+    # 6) N1 gating: items offer no add until E4; check:false forbids;
+    #    check:true events offer the add (default side satisfies N2)
+    idx_i6 = list(CONTENT_FILES).index("items")
+    viewer6._render_file(idx_i6)
+    viewer6._on_edit_toggle("items", "berries")
+    _noeff = [w for w in _walk(viewer6.records_frame)
+              if w.winfo_class() == "Button"
+              and str(w.cget("text")) == "+ add effect"]
+    assert not _noeff, "items have no legal effect type until E4"
+    _labels_i = [str(w.cget("text")) for w in _walk(viewer6.records_frame)
+                 if w.winfo_class() == "Label"]
+    assert any("no legal effect types" in t for t in _labels_i), _labels_i
+    idx_e6 = list(CONTENT_FILES).index("events")
+    viewer6._render_file(idx_e6)
+    viewer6._on_edit_toggle("events", "quiet_moment")
+    _noeff = [w for w in _walk(viewer6.records_frame)
+              if w.winfo_class() == "Button"
+              and str(w.cget("text")) == "+ add effect"]
+    assert not _noeff, "check:false events cannot declare effects"
+    _labels_e = [str(w.cget("text")) for w in _walk(viewer6.records_frame)
+                 if w.winfo_class() == "Label"]
+    assert any("check:false events cannot declare" in t
+               for t in _labels_e), _labels_e
+    viewer6._render_file(idx_e6)
+    viewer6._on_edit_toggle("events", "wandering_thoughts")
+    _btn6("+ add effect").invoke()
+    wander = dict(viewer6.bundle.events)["wandering_thoughts"]
+    added = wander["effects"][-1]
+    assert added["type"] == "vital_delta", added
+    assert added["when"] == "on_failure", \
+        "auto-added event entry defaults to on_failure (N2-friendly)"
+    assert viewer6.problems == [], viewer6.problems
+
+    # 7) save + clean close (no dialog)
+    dialogued.clear()
+    viewer6._on_save()
+    viewer6._on_close()
+    assert not dialogued, "clean close must not prompt"
+finally:
+    for _n, _fn in _real6.items():
+        setattr(editor_mod.messagebox, _n, _fn)
+    shutil.rmtree(tmp6, ignore_errors=True)
+
+print("GUI smoke OK: E5 editable effect rows + gating + Tunables")

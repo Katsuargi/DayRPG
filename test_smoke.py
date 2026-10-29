@@ -1390,3 +1390,28 @@ assert ("Health", -5) in res.event.changes, res.event.changes
 assert e3g.health == 95, ("generic penalty applies exactly once when "
                           f"no event was drawn: {e3g.health}")
 print("Effects applier OK (E3: declared sides, both channels, no double-dip)")
+
+# --- E5: check_design counts grant_item effects as an item source ------------
+_cd = Path(tempfile.mkdtemp(prefix="design_grant_"))
+try:
+    for _f in _FIXTURE.glob("*.json"):
+        shutil.copy(_f, _cd / _f.name)
+
+    def _design_out() -> str:
+        return subprocess.run(
+            [sys.executable, str(_ROOT / "check_design.py"), str(_cd)],
+            capture_output=True, text=True, cwd=str(_ROOT)).stdout
+
+    _out0 = _design_out()
+    assert "'herbs' has no source" in _out0, _out0  # control: unsourced
+    _ev = json.loads((_cd / "events.json").read_text(encoding="utf-8"))
+    _ev["wandering_thoughts"]["effects"].append(
+        {"type": "grant_item", "when": "on_failure",
+         "item": "herbs", "count": 1})
+    (_cd / "events.json").write_text(json.dumps(_ev, indent=2),
+                                     encoding="utf-8")
+    _out1 = _design_out()
+    assert "'herbs' has no source" not in _out1, _out1  # edge counted
+finally:
+    shutil.rmtree(_cd, ignore_errors=True)
+print("Design lint rule OK (grant_item counts as a source)")
