@@ -41,3 +41,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-26 | content-mutation fuzz: check_fuzz.py (19 variants, child-process gate) | ea7dad6 | test_smoke + check_live + test_editor_gui + test_content_write + check_fuzz green
 - 2026-10-26 | design lint (advisory): check_design.py, 5 rules, always exit 0 | 35f173e | full suite green + 2 advisory warnings visible
 - 2026-10-26 | EFFECTS_BRIEF.md (draft) + OPEN_QUESTIONS.md for review round; no code | 121cd68 | full suite green (docs-only)
+- 2026-10-26 | review round 1: pantry guard (eat loop refuses zero-progress bites) + brief reconciliation (sleep slip, one commit pin, D7/D8, D1 rounding, review-facts) | 27031a0, 626add5 | full suite green incl. 20-variant fuzz with drain invariant
