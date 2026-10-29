@@ -274,8 +274,9 @@ serialized per the persistence recipe (`DEV_GUIDE.md:471-479`).
   string/int/number/`opt`/`pair`/`ref`/`dict_int`/`nested`
   (`content.py:210-232` for items) — effect params vary by type, so
   E1's read-only display and E4's editable rows both need a new typed
-  effect-list spec tag plus matching editor branches (the Tunables
-  sheet has no `list` branch either, `editor.py:260-312`).
+  effect-list spec tag plus matching editor branches (both landed in
+  E1/E5; the Tunables `list` branch landed in E5 too — see the
+  Tunables section above).
 
 
 ### Which balance entries would move onto records (if numbers relocate)

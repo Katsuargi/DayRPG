@@ -46,3 +46,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-28 | effects E1: registry + engine-free validation + read-only display, zero behavior change (LEGAL_EFFECTS empty) | 5c25301 | full suite green incl. fuzz + lint
 - 2026-10-28 | effects E2: first applier — recovery_bonus sums over built buildings, key retired, N1 pair enabled, D4 display generation; brief re-anchored | 3bd972c | full suite green incl. fuzz + lint
 - 2026-10-28 | effects E3: triggered event ops — N2 split, four-type applier, dual-channel reporting, events LEGAL pair; brief re-anchored | 7cbacaa | full suite green incl. fuzz + lint
+- 2026-10-28 | effects E5: editable effect rows + legality-gated add + Tunables effects branch + grant_item design-lint rule | 786a49d | full suite green incl. fuzz + lint

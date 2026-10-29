@@ -119,9 +119,25 @@ Ordered; phases have one concern each (a failure has one suspect).
   reporting + no-double-dip pin (health 95, never 90), success-side
   wrong-side-never-runs, generic-path penalty pin, and the three
   test-built check-events now declare their consequence (N2 honesty).
-  Next: **E5** — editable effect rows (`_add_effect_list`, no-reorder
-  chrome per R17; Tunables `list` branch; `check_design` grant_item
-  source rule), then optional **E4** (tool_bonus → yield_bonus).
+  **E5 is done and green** (`786a49d`): `_add_effect_list` replaced the
+  E1 read-only line — type combobox + param widgets via `_member`
+  (grant_xp.key dyn_ref tracks `kind`, N3), D4 live preview label, no
+  ↑↓ (R17), D17 dict-per-entry write-through, type swap reseeds
+  params, add button gated by LEGAL_EFFECTS (N1: hidden for items
+  pre-E4 and check:false events; defaults favor on_failure so new
+  event entries satisfy N2), plus the Tunables effects branch
+  (`editor.py:275-301`, numeric leaves) and the `check_design`
+  grant_item source rule (message now ends "no event grants it").
+  Gotcha recorded: `_render_file` does NOT clear `_editing` (only
+  `reload()` does) — toggling after a render flips an open pane form
+  OFF; E5 tests navigate accordingly. Two test-index fixes: the
+  materials `✕` is no longer the last one (effects trails it), and
+  the E1 mount block now asserts the editable model. Brief: Tunables
+  prose + cites re-anchored, review-facts clause updated. Next:
+  **E4** (optional) — tool_bonus → yield_bonus absorption: items SCHEMA
+  field deletion, `_check_tool_bonuses`/`TOOL_BONUSES` removal, economy
+  view special-case, GUI edit test rewrite (now possible — E5 landed),
+  N1 enables items×yield_bonus.
 
 ### Next: editor (phases 2+), then deferred design work
 
