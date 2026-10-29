@@ -106,9 +106,22 @@ Ordered; phases have one concern each (a failure has one suspect).
   carries `content/patterns.json:12-17` (hand effect string dropped;
   `main.py` derives tooltip/picker text from `effect_text()` with legacy
   fallback for the axe until E4). The brief's citations were re-anchored
-  to `3bd972c` (E1+E2 shifted lines; stale-token scan clean). Next: **E3**
-  — triggered event ops (applier + N2 generic-path split + N3 rules +
-  N4 reporting test; `EVENT_FAILURE_HEALTH` STAYS global per N2).
+  to `7cbacaa` (E1+E2+E3 shifted lines; stale-token scan clean). **E3 is
+  done and green** (`7cbacaa`): `RandomEvent.effects`, `_resolve_event`
+  N2 split (declared sides run INSTEAD of the generic penalty; the
+  penalty stays for chosen-is-None at `:944-949`), `_apply_effect`
+  applier (`:964-1001`, four types, dual-channel reporting per N4 —
+  `_diff`+`xp_changes` for the summary, `event_changes` for the popup),
+  `LEGAL_EFFECTS["events"]` enabled with the applier (N1), N2 validator
+  rule (`check:true ⇒ ≥1 on_failure`), all three live check-events
+  declare −5 (seeded behavior byte-identical — Day-1 pins held). Tests:
+  N2 mutations (empty/on_success-only/absent all rejected), failure-side
+  reporting + no-double-dip pin (health 95, never 90), success-side
+  wrong-side-never-runs, generic-path penalty pin, and the three
+  test-built check-events now declare their consequence (N2 honesty).
+  Next: **E5** — editable effect rows (`_add_effect_list`, no-reorder
+  chrome per R17; Tunables `list` branch; `check_design` grant_item
+  source rule), then optional **E4** (tool_bonus → yield_bonus).
 
 ### Next: editor (phases 2+), then deferred design work
 

@@ -45,3 +45,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-28 | round-2 reconciliation binding: order E1-E2-E3-E5-E4, D1-D8 ruled, N1-N5 added; plan banner + cross-refs | 5c9ad9a | full suite green (docs-only)
 - 2026-10-28 | effects E1: registry + engine-free validation + read-only display, zero behavior change (LEGAL_EFFECTS empty) | 5c25301 | full suite green incl. fuzz + lint
 - 2026-10-28 | effects E2: first applier — recovery_bonus sums over built buildings, key retired, N1 pair enabled, D4 display generation; brief re-anchored | 3bd972c | full suite green incl. fuzz + lint
+- 2026-10-28 | effects E3: triggered event ops — N2 split, four-type applier, dual-channel reporting, events LEGAL pair; brief re-anchored | 7cbacaa | full suite green incl. fuzz + lint
