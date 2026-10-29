@@ -21,9 +21,9 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from content import (CONTENT_FILES, SCHEMA, collect_references, ContentError,
-                     StaleWriteError, save, try_load_content_with_state,
-                     validate_bundle)
+from content import (CONTENT_FILES, SCHEMA, EFFECT_TYPES, collect_references,
+                     ContentError, StaleWriteError, effect_text, save,
+                     try_load_content_with_state, validate_bundle)
 
 BANNER_BG = "#8b1a1a"
 FLASH_BG = "#ffe39a"
@@ -1057,6 +1057,15 @@ class ContentViewer:
             return ", ".join(
                 f"{self._display_of(spec[1], key)} ×{qty}"
                 for key, qty in value.items())
+        if tag == "effect":
+            # E1: generated text from the type union (binding D4) —
+            # total-first, malformed entries render with a warning
+            if not isinstance(value, dict):
+                return f"{value!r} ⚠ not an effect"
+            text = effect_text(value)
+            if value.get("type") not in EFFECT_TYPES:
+                text += " ⚠ type"
+            return text
         if tag == "nested":
             return str(value) + ("" if isinstance(value, dict)
                                  else " ⚠ not an object")
@@ -1129,6 +1138,12 @@ class RecordForm:
             self._add_nested(row, field, spec, value, was_opt, present)
             return
         if isinstance(spec, tuple) and spec[0] == "list":
+            # effects (the ("effect", None) member) render read-only in
+            # E1 — editable rows land with E5, and _add_list's ↑↓ chrome
+            # would break order-is-data anyway (plan R17)
+            if (isinstance(spec[1], tuple) and spec[1][0] == "effect"):
+                self._add_effects_readonly(row, value, present)
+                return
             self._add_list(row, field, spec, value, was_opt)
             return
         if isinstance(spec, tuple) and spec[0] == "dict_int":
@@ -1145,6 +1160,24 @@ class RecordForm:
         tk.Label(row, anchor="w", text=text).pack(side="left")
         tk.Label(row, anchor="w", fg=MUTED_FG,
                  text="  (no editor for this spec)").pack(side="left")
+
+    def _add_effects_readonly(self, row, value, present) -> None:
+        """E1: effects render as one generated read-only line (editable
+        rows land with E5). Absent stays absent — opening a form must
+        never materialize the field (no bundle mutation on mount)."""
+        if not present or not value:
+            text = "— absent"
+        elif not isinstance(value, list):
+            text = f"{value!r} ⚠ not a list"
+        else:
+            text = "; ".join(
+                self.viewer._value_text(("effect", None), entry, self.fname)
+                for entry in value) or "— empty list"
+        tk.Label(row, anchor="w", text=text).pack(side="left")
+        if isinstance(value, list) and value:
+            tk.Label(row, anchor="w", fg=MUTED_FG,
+                     text="  (read-only — editing arrives with E5)"
+                     ).pack(side="left")
 
     def _add_scalar(self, row, field, kind, value, was_opt, *,
                     readonly=False) -> None:

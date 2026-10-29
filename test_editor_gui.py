@@ -790,3 +790,47 @@ finally:
     shutil.rmtree(tmp4, ignore_errors=True)
 
 print("GUI smoke OK: 2e repair flow + run-check")
+
+# --- E1: effects render read-only (registry slice, no editable rows) --------
+# Generated text (D4) in both the stacked viewer and the record form;
+# no editable widget until E5; mounting never mutates the record; the
+# zero-pair legality problem stays visible and the bundle usable.
+tmp5 = Path(tempfile.mkdtemp(prefix="effects_"))
+try:
+    for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
+        shutil.copy(f, tmp5 / f.name)
+    pats = json.loads((tmp5 / "patterns.json").read_text(encoding="utf-8"))
+    pats["lean_to"]["effects"] = [{"type": "recovery_bonus", "mult": 0.1}]
+    (tmp5 / "patterns.json").write_text(json.dumps(pats, indent=2),
+                                        encoding="utf-8")
+    root5, viewer5 = build(tmp5)
+    assert any("not (yet) allowed on patterns records" in str(p)
+               for p in viewer5.problems), viewer5.problems
+
+    # stacked read-only view renders the generated text, not the raw dict
+    idx_p = list(CONTENT_FILES).index("patterns")
+    viewer5.file_list.selection_set(idx_p)
+    viewer5._render_file(idx_p)
+    stacked = [str(w.cget("text")) for w in _walk(viewer5.records_frame)
+               if w.winfo_class() == "Label"]
+    assert any("+10% recovery" in t for t in stacked), stacked
+
+    # the record form shows a read-only line and registers no editor
+    viewer5._on_edit_toggle("patterns", "lean_to")
+    form5 = viewer5._forms[("patterns", "lean_to")]
+    assert "effects" not in form5.vars and "effects" not in form5.rowvars
+    rows = [str(w.cget("text")) for w in _walk(viewer5.records_frame)
+            if w.winfo_class() == "Label"]
+    assert any("+10% recovery" in t for t in rows), rows  # generated text
+    assert any("(read-only" in t for t in rows), rows     # not editable
+    lean = dict(viewer5.bundle.patterns)["lean_to"]
+    assert lean["effects"] == [{"type": "recovery_bonus", "mult": 0.1}], \
+        "mounting a form must not mutate the record"
+
+    dialogued.clear()
+    viewer5._on_close()
+    assert not dialogued, "problems are not unsaved edits — clean close"
+finally:
+    shutil.rmtree(tmp5, ignore_errors=True)
+
+print("GUI smoke OK: E1 effects read-only render")

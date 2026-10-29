@@ -443,6 +443,103 @@ for _fname, _spec in content.SCHEMA.items():
             _fname, _field, _probs)
 print("Schema drift OK")
 
+# --- E1: effects registry (validation, zero-pair legality, edges) -----------
+# Binding N1: LEGAL_EFFECTS ships empty — a well-formed entry must be
+# rejected as "not appliable yet", while malformed entries surface their
+# real problem FIRST (shape before legality, so the empty table never
+# masks a typo). Live records have no `effects`, so live stays clean.
+def _eff_probs(fname: str, rec: dict) -> list:
+    """Problems from live content with rec as fname's first record."""
+    return [str(p) for p in content.validate_bundle(
+        content.Content(source=live_bundle.source,
+                        **_mutated(fname, rec)))]
+
+_item = dict(_records_of("items", live_bundle)[0])
+assert _item["id"] == "berries", _item["id"]
+
+# unknown effect type / bad mult / negative mult (R15 range)
+_item["effects"] = [{"type": "sparkle"}]
+probs = _eff_probs("items", _item)
+assert any("unknown effect type" in p for p in probs), probs
+_item["effects"] = [{"type": "recovery_bonus", "mult": "ten"}]
+probs = _eff_probs("items", _item)
+assert any("'mult' must be a number >= 0" in p for p in probs), probs
+_item["effects"] = [{"type": "recovery_bonus", "mult": -0.5}]
+probs = _eff_probs("items", _item)
+assert any("'mult' must be a number >= 0" in p for p in probs), probs
+
+# yield_bonus with unknown action; unknown param key (typo guard)
+_item["effects"] = [{"type": "yield_bonus", "action": "gather_stone",
+                     "add": 1}]
+probs = _eff_probs("items", _item)
+assert any("unknown action" in p for p in probs), probs
+_item["effects"] = [{"type": "grant_item", "item": "berries", "count": 1,
+                     "cont": 2}]
+probs = _eff_probs("items", _item)
+assert any("unknown grant_item parameter(s): cont" in p for p in probs), probs
+
+# vital_delta missing `when` (D8/R16 fail-loud) and hunger cut from v1
+_item["effects"] = [{"type": "vital_delta", "target": "health",
+                     "amount": -5}]
+probs = _eff_probs("items", _item)
+assert any("requires 'when'" in p for p in probs), probs
+_item["effects"] = [{"type": "vital_delta", "when": "on_failure",
+                     "target": "hunger", "amount": -5}]
+probs = _eff_probs("items", _item)
+assert any("'target' must be one of health, energy" in p for p in probs), probs
+
+# grant_xp kind rules (N3): stats/skills need a resolvable key of the
+# right kind; player forbids one (dyn_ref cannot express presence)
+_item["effects"] = [{"type": "grant_xp", "when": "on_success",
+                     "kind": "stats", "amount": 5}]
+probs = _eff_probs("items", _item)
+assert any("needs 'key'" in p for p in probs), probs
+_item["effects"] = [{"type": "grant_xp", "when": "on_success",
+                     "kind": "skills", "key": "strength", "amount": 5}]
+probs = _eff_probs("items", _item)  # strength is a stat, not a skill
+assert any("needs 'key'" in p for p in probs), probs
+_item["effects"] = [{"type": "grant_xp", "when": "on_success",
+                     "kind": "player", "key": "strength", "amount": 5}]
+probs = _eff_probs("items", _item)
+assert any("must not carry 'key'" in p for p in probs), probs
+
+# THE E1 PIN: a fully well-formed entry is still rejected — zero pairs
+_item["effects"] = [{"type": "yield_bonus", "action": "gather_wood",
+                     "add": 1}]
+probs = _eff_probs("items", _item)
+assert any("not (yet) allowed on items records" in p for p in probs), probs
+_pat = dict(_records_of("patterns", live_bundle)[0])
+assert _pat["name"] == "Lean to", _pat["name"]
+_pat["effects"] = [{"type": "recovery_bonus", "mult": 0.1}]
+probs = _eff_probs("patterns", _pat)
+assert any("not (yet) allowed on patterns records" in p for p in probs), probs
+
+# N1 corner: check:false events declare no effects (the flavor
+# early-return applies nothing — game_core keeps changes == [] pinned)
+_evt = dict(_records_of("events", live_bundle)[0])
+assert _evt["check"] is True, _evt  # wandering_thoughts covers every action
+_evt["check"] = False
+_evt["effects"] = [{"type": "vital_delta", "when": "on_failure",
+                    "target": "health", "amount": -5}]
+probs = _eff_probs("events", _evt)
+assert any("check:false events must not declare effects" in p
+           for p in probs), probs
+
+# N3 edges: effect refs join the reference graph (delete-blocking and
+# the viewer's uses/used-by read the same collect_references output)
+_item["effects"] = [{"type": "yield_bonus", "action": "gather_wood",
+                     "add": 1},
+                    {"type": "grant_xp", "when": "on_success",
+                     "kind": "stats", "key": "strength", "amount": 5}]
+_edges = content.collect_references(
+    content.Content(source=live_bundle.source, **_mutated("items", _item)))
+assert ("items", "berries", "effects.yield_bonus.action",
+        "actions", "gather_wood") in _edges, _edges
+assert ("items", "berries", "effects.grant_xp.key",
+        "stats", "strength") in _edges, _edges
+assert content.validate_bundle(live_bundle) == [], "live content clean"
+print("Effects registry OK (E1: zero-pair legality, N3 edges)")
+
 # --- Stat-targeted difficulty: behavior (subprocess on temp content) --------
 # Copy of the fixture where gather_food aims its check at Strength
 # (difficulty_target) with DC 21: a d20 can never beat it at strength 0,

@@ -83,6 +83,115 @@ BALANCE_KEYS: Tuple[str, ...] = tuple(BALANCE_TYPES)
 #: Pattern kinds (must match game_core's BUILD/CRAFT constants).
 PATTERN_KINDS: Tuple[str, ...] = ("build", "craft")
 
+# --- Effects registry (E1) --------------------------------------------------
+#: When an effect fires (binding D8): passives default to "always"
+#: (absent = always); triggered types must name one explicitly —
+#: omission fails validation, never a silent never-fire. on_use is
+#: schema-reserved for a future item-use seam (plan R18): nothing
+#: consumes it in v1.
+TRIGGERS: Tuple[str, ...] = ("always", "on_success", "on_failure", "on_use")
+
+#: vitals vital_delta may target (binding D8: hunger is cut from v1 —
+#: its scale is inverted in-game, higher = worse, which reads backwards
+#: on a signed effect; add it later with a deliberate sign convention).
+VITALS: Tuple[str, ...] = ("health", "energy")
+
+#: grant_xp destinations (binding N3 keys `key` off these).
+XP_KINDS: Tuple[str, ...] = ("player", "stats", "skills")
+
+#: The closed effect vocabulary. An entry is
+#: {"type": <name>, "when": <trigger>, "text"?: <override>, ...params};
+#: params vary by type, which is why SCHEMA carries ONE new spec tag:
+#: ("effect", None) — a discriminated union resolved against this table.
+#: `stack` is the applier's per-type rule (binding D1): "sum" adds
+#: active mults then floors once; "max" takes the best single source;
+#: "each" fires once per matching trigger in record order.
+EFFECT_TYPES: Dict[str, dict] = {
+    "recovery_bonus": {
+        "stack": "sum",
+        "when": ("opt", ("enum", TRIGGERS)),
+        "mult": "number",
+    },
+    "yield_bonus": {
+        "stack": "max",
+        "when": ("opt", ("enum", TRIGGERS)),
+        "action": ("ref", "actions"),
+        "add": "int",
+    },
+    "vital_delta": {
+        "stack": "each",
+        "when": ("enum", TRIGGERS),
+        "target": ("enum", VITALS),
+        "amount": "int",
+    },
+    "grant_xp": {
+        "stack": "each",
+        "when": ("enum", TRIGGERS),
+        "kind": ("enum", XP_KINDS),
+        # sibling-keyed dyn_ref (binding N3, the difficulty_target
+        # precedent): stats/skills resolve `key` in that file; the
+        # kind=player forbids-key rule is imperative below.
+        "key": ("opt", ("dyn_ref", {"stats": "stats", "skills": "skills"})),
+        "amount": "int",
+    },
+    "grant_item": {
+        "stack": "each",
+        "when": ("enum", TRIGGERS),
+        "item": ("ref", "items"),
+        "count": "int",
+    },
+    "consume_item": {
+        "stack": "each",
+        "when": ("enum", TRIGGERS),
+        "item": ("ref", "items"),
+        "count": "int",
+    },
+}
+
+#: (record kind -> effect type -> allowed triggers) pairs that HAVE a
+#: consuming applier (binding N1). Grows in the same commit as each
+#: applier: E2 enables patterns/recovery_bonus; E3 events' triggered
+#: ops; E4 items/yield_bonus. E1 ships it EMPTY — the registry and
+#: validation land first, nothing is appliable yet, so no entry can
+#: silently never-fire. test_smoke pins the empty state; each slice
+#: pins its own enabling alongside the applier.
+LEGAL_EFFECTS: Dict[str, Dict[str, Tuple[str, ...]]] = {}
+
+
+def effect_text(entry: Any) -> str:
+    """Generated display text for one effect entry (binding D4).
+
+    One source: type+params, engine-free so the editor's read-only view
+    and the game's tooltips share it — hand-written effect strings
+    drift from mechanics (measured: pattern.effect vs _recovery). A
+    non-empty per-entry `text` param overrides for flavor. Total-first:
+    malformed entries render something, never raise (the editor shows
+    broken content so it can be repaired)."""
+    if not isinstance(entry, dict):
+        return f"{entry!r}"
+    override = entry.get("text")
+    if isinstance(override, str) and override:
+        return override
+    etype = entry.get("type")
+    try:
+        if etype == "recovery_bonus":
+            return f"+{entry['mult'] * 100:g}% recovery"
+        if etype == "yield_bonus":
+            return f"+{entry['add']} {entry['action']} yield"
+        if etype == "vital_delta":
+            return f"{entry['target']} {entry['amount']:+d}"
+        if etype == "grant_xp":
+            key = entry.get("key")
+            return (f"+{entry['amount']} XP" if key is None
+                    else f"+{entry['amount']} {key} XP")
+        if etype == "grant_item":
+            return f"+{entry['count']} {entry['item']}"
+        if etype == "consume_item":
+            return f"\u2212{entry['count']} {entry['item']}"
+    except (KeyError, TypeError):
+        pass
+    return f"{etype or 'effect'} (incomplete)"
+
 #: Check contributor kinds (must match game_core's ACTION_CHECKS shape).
 CHECK_KINDS: Tuple[str, ...] = ("stats", "skills")
 
@@ -92,7 +201,8 @@ CHECK_KINDS: Tuple[str, ...] = ("stats", "skills")
 #: ("opt", T) absent-OK; ("nullable", T) may be null; ("enum", options);
 #: ("ref", file) record id; ("dyn_ref", {sibling value: file}) id in the
 #: file named by a sibling field; ("list", T); ("pair", T1, T2);
-#: ("dict_int", file) ref -> positive-int map; ("nested", fields) block.
+#: ("dict_int", file) ref -> positive-int map; ("nested", fields) block;
+#: ("effect", None) one typed effect entry (union over EFFECT_TYPES).
 #:
 #: order_sensitive: file order is meaningful data (planner order, event
 #: draw order, golden tuples) — the editor must never sort these files.
@@ -111,6 +221,7 @@ SCHEMA: Dict[str, dict] = {
             "tooltip": ("opt", "string"),
             "food": ("opt", "int"),
             "tool_bonus": ("opt", ("pair", ("ref", "actions"), "int")),
+            "effects": ("opt", ("list", ("effect", None))),
         },
     },
     "skills": {
@@ -172,6 +283,7 @@ SCHEMA: Dict[str, dict] = {
             "description": "string",
             "effect": ("opt", "string"),
             "difficulty": ("opt", "int"),
+            "effects": ("opt", ("list", ("effect", None))),
         },
     },
     "events": {
@@ -183,6 +295,7 @@ SCHEMA: Dict[str, dict] = {
             "actions": ("list", ("ref", "actions")),
             "check": "bool",
             "difficulty": ("opt", "int"),
+            "effects": ("opt", ("list", ("effect", None))),
         },
     },
     "balance": {
@@ -252,6 +365,35 @@ def _spec_edge(fname: str, rec_id: str, field: str, spec, value,
             for key in value:
                 if isinstance(key, str):
                     edges.append((fname, rec_id, field, spec[1], key))
+    elif tag == "effect":
+        # one entry of the EFFECT_TYPES union: refs become edges under
+        # "effects.<type>.<param>" so delete-blocking and the viewer's
+        # uses/used-by see them (binding N3 relies on this for keys).
+        if isinstance(value, dict):
+            etype = value.get("type")
+            if isinstance(etype, str) and etype in EFFECT_TYPES:
+                for pname, pspec in EFFECT_TYPES[etype].items():
+                    if pname == "stack":
+                        continue  # applier metadata, not a param
+                    # unwrap ("opt", ...) — the only standalone dyn_ref
+                    # in v1 is grant_xp.key, declared opt (N3)
+                    inner = pspec
+                    while (isinstance(inner, tuple)
+                           and inner[0] in ("opt", "nullable")):
+                        inner = inner[1]
+                    if (isinstance(inner, tuple)
+                            and inner[0] == "dyn_ref"):
+                        # sibling is the entry's own `kind` field
+                        to_file = inner[1].get(value.get("kind"))
+                        ref = value.get(pname)
+                        if to_file and isinstance(ref, str):
+                            edges.append(
+                                (fname, rec_id,
+                                 f"{field}.{etype}.{pname}", to_file, ref))
+                    else:
+                        _spec_edge(fname, rec_id,
+                                   f"{field}.{etype}.{pname}", pspec,
+                                   value.get(pname), edges)
     elif tag == "nested":
         if isinstance(value, dict) and isinstance(spec[1], dict):
             for sub, sspec in spec[1].items():
@@ -768,6 +910,133 @@ def _check_tool_bonuses(
             )
 
 
+def _check_effects(fname: str, records: Any, item_ids: Set[str],
+                   action_ids: Set[str], skill_ids: Set[str],
+                   stat_ids: Set[str], problems: List[str]) -> None:
+    """E1: typed effect lists per EFFECT_TYPES, validated engine-free.
+
+    Order matters (binding N1): shape and params report first, the
+    legality table LAST — E1 ships LEGAL_EFFECTS empty, so a well-formed
+    entry's only error is "no applier wires that pair yet", and
+    malformed entries still surface their real problem instead of being
+    masked by the empty table. Messages keep the house
+    'file: 'rec': ...' shape for editor click-through.
+    """
+    if isinstance(records, dict):
+        entries = [(str(k), v) for k, v in records.items()]
+    elif isinstance(records, list):
+        entries = [(str(rec.get("id", i)) if isinstance(rec, dict) else str(i),
+                    rec) for i, rec in enumerate(records)]
+    else:
+        return  # file shape reported by the file's own checker
+    for rec_id, rec in entries:
+        if not isinstance(rec, dict) or "effects" not in rec:
+            continue
+        where = f"{fname}.json: {rec_id!r}"
+        effects = rec["effects"]
+        if not isinstance(effects, list):
+            problems.append(f"{where}: 'effects' must be a list")
+            continue
+        if fname == "events" and rec.get("check") is False and effects:
+            # binding N1 corner: the flavor early-return (game_core
+            # _resolve_event) applies nothing — effects here never fire
+            problems.append(
+                f"{where}: check:false events must not declare effects")
+        for i, eff in enumerate(effects):
+            _check_effect_entry(where, i, eff, fname, item_ids, action_ids,
+                                skill_ids, stat_ids, problems)
+
+
+def _check_effect_entry(where: str, index: int, eff: Any, fname: str,
+                        item_ids: Set[str], action_ids: Set[str],
+                        skill_ids: Set[str], stat_ids: Set[str],
+                        problems: List[str]) -> None:
+    """One effect entry: known type, exact params, then legality (N1)."""
+    at = f"{where}: 'effects' entry #{index + 1}"
+    if not isinstance(eff, dict):
+        problems.append(f"{at}: each entry must be an object")
+        return
+    etype = eff.get("type")
+    if not isinstance(etype, str) or etype not in EFFECT_TYPES:
+        problems.append(f"{at}: unknown effect type {etype!r}")
+        return
+    params = EFFECT_TYPES[etype]
+    keys = {k for k in params if k != "stack"} | {"type", "text"}
+    unknown = sorted(set(eff) - keys)
+    if unknown:
+        problems.append(
+            f"{at}: unknown {etype} parameter(s): {', '.join(unknown)}")
+    for pname, pspec in params.items():
+        if pname == "stack":
+            continue
+        is_opt = isinstance(pspec, tuple) and pspec[0] == "opt"
+        if not is_opt and pname not in eff:
+            problems.append(f"{at}: {etype} requires {pname!r}")
+    if "text" in eff and not isinstance(eff["text"], str):
+        problems.append(f"{at}: 'text' must be a string")
+    when = eff.get("when")
+    if params["stack"] == "each" and when is None:
+        # binding D8/R16: triggered types fail loud, never silent never-fire
+        problems.append(
+            f"{at}: triggered {etype} requires 'when' "
+            f"({', '.join(TRIGGERS)})")
+    if when is not None and when not in TRIGGERS:
+        problems.append(f"{at}: 'when' must be one of {', '.join(TRIGGERS)}")
+    if etype == "recovery_bonus":
+        mult = eff.get("mult")
+        if isinstance(mult, bool) or not _is_number(mult) or mult < 0:
+            problems.append(f"{at}: 'mult' must be a number >= 0")
+    elif etype == "yield_bonus":
+        action = eff.get("action")
+        if isinstance(action, str) and action not in action_ids:
+            problems.append(f"{at}: 'action' names unknown action {action!r}")
+        add = eff.get("add")
+        if add is not None and (type(add) is not int or add < 1):
+            problems.append(f"{at}: 'add' must be an integer >= 1")
+    elif etype == "vital_delta":
+        target = eff.get("target")
+        if target is not None and target not in VITALS:
+            problems.append(
+                f"{at}: 'target' must be one of {', '.join(VITALS)}")
+        amount = eff.get("amount")
+        if amount is not None and type(amount) is not int:
+            problems.append(f"{at}: 'amount' must be an integer")
+    elif etype == "grant_xp":
+        kind = eff.get("kind")
+        key = eff.get("key")
+        amount = eff.get("amount")
+        if amount is not None and (type(amount) is not int or amount < 1):
+            problems.append(f"{at}: 'amount' must be an integer >= 1")
+        if kind is not None and kind not in XP_KINDS:
+            problems.append(
+                f"{at}: 'kind' must be one of {', '.join(XP_KINDS)}")
+        # binding N3: kind-keyed key rules (dyn_ref cannot express
+        # presence, so player=>absent and stats/skills=>required are here)
+        if kind == "player" and key is not None:
+            problems.append(f"{at}: kind 'player' must not carry 'key'")
+        elif kind in ("stats", "skills"):
+            ids = stat_ids if kind == "stats" else skill_ids
+            if not isinstance(key, str) or key not in ids:
+                problems.append(
+                    f"{at}: kind {kind!r} needs 'key' naming a "
+                    f"{kind[:-1]}")
+    elif etype in ("grant_item", "consume_item"):
+        item = eff.get("item")
+        if isinstance(item, str) and item not in item_ids:
+            problems.append(f"{at}: 'item' names unknown item {item!r}")
+        count = eff.get("count")
+        if count is not None and (type(count) is not int or count < 1):
+            problems.append(f"{at}: 'count' must be an integer >= 1")
+    # binding N1 — legality LAST: the pair must be enabled by the slice
+    # that wires its applier (E1's table is empty: nothing fires yet)
+    allowed = LEGAL_EFFECTS.get(fname, {}).get(etype)
+    eff_when = when if when is not None else "always"
+    if allowed is None or eff_when not in allowed:
+        problems.append(
+            f"{at}: {etype!r} is not (yet) allowed on {fname} records"
+            " - no applier wires that pair (LEGAL_EFFECTS)")
+
+
 def validate_bundle(content: Content) -> List[Problem]:
     """All engine-free checks; [] means the content set is consistent.
 
@@ -785,6 +1054,12 @@ def validate_bundle(content: Content) -> List[Problem]:
     _check_tool_bonuses(content.items, action_ids, problems)
     _check_patterns(content.patterns, skill_ids, item_ids, problems)
     _check_events(content.events, action_ids, problems)
+    _check_effects("items", content.items, item_ids, action_ids,
+                   skill_ids, stat_ids, problems)
+    _check_effects("patterns", content.patterns, item_ids, action_ids,
+                   skill_ids, stat_ids, problems)
+    _check_effects("events", content.events, item_ids, action_ids,
+                   skill_ids, stat_ids, problems)
     _check_balance(content.balance, problems)
     # One conversion point: messages become Problems (text unchanged)
     # with .file/.record_id/.field parsed from the house message shape.
