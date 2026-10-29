@@ -6,8 +6,8 @@
 notes; the rulings below were made by the implementing agent with the
 user's go-ahead and **supersede the open-decision options further down**
 (kept for provenance). Measured facts were re-verified at commit
-`27031a0` (the pantry-guard fix shifted lines below the eat loop;
-citations current as of it).
+`3bd972c` — the pantry-guard fix, E1, and E2 all shifted lines, so
+every file:line below was re-anchored against that commit.
 
 ## Binding decisions (round-2 reconciliation, 2026-10-28)
 
@@ -36,14 +36,14 @@ here.
 - **D1 Stacking — per-type; amends plan §2 D1/§3.2/R3.**
   `recovery_bonus`: **sum** mults across built buildings, then floor
   once — `int(amount * (1 + total_mult))`; byte-identical for one 0.1
-  source (pins `test_smoke.py:859-864`); keep the `amount > 0` guard in
+  source (pins `test_smoke.py:963-968`); keep the `amount > 0` guard in
   the `_recovery` rewrite. `yield_bonus`: **max** across owned item
-  copies (pinned +1 once `test_smoke.py:887-900`; precedent
-  `game_core.py:1024-1028`). Triggered types fire once each, record
+  copies (pinned +1 once `test_smoke.py:991-1004`; precedent
+  `game_core.py:1040-1044`). Triggered types fire once each, record
   order. Plan §3.2 must read `stack: "sum"` for `recovery_bonus` —
   §4.1/E2-S3's applier text was the correct half of the contradiction.
 - **D2 RNG — (a) effects never draw** (plan §2 D2 stands). Appliers
-  run after all existing draws; canary `test_smoke.py:650-670`.
+  run after all existing draws; canary `test_smoke.py:754-774`.
 - **D3 Numbers — narrower than plan §2 D3/R4.** Only
   `LEAN_TO_RECOVERY_BONUS` moves to a record (E2).
   **`EVENT_FAILURE_HEALTH` stays in balance.json** as the generic-path
@@ -56,12 +56,12 @@ here.
   record-level `effect` string / hand `tooltip` stays only as fallback
   for records *without* effects. Rationale: hand-written text beside
   machine data is the exact drift class measured in round 1 (tooltip
-  vs `game_core.py:992-993`); generation also defuses R15's 1-vs-0.1
+  vs `game_core.py:1006-1009` — closed for records with effects); generation also defuses R15's 1-vs-0.1
   `mult` footgun (rendered "+100%" vs "+10%" is visible immediately).
   Ripple into E2/E4 S1 steps: the "keep the `effect` string for the
   tooltip" clauses become "display derives from effects".
 - **D5 Eating — (a) confirmed.** Loop stays Python; effects only add.
-  The just-shipped pantry guard (`game_core.py:1130-1141`) is
+  The just-shipped pantry guard (`game_core.py:1146-1157`) is
   fuzz-netted; rewiring the loop's targets into effect data would put
   a user-specified rule at risk for no v1 payoff.
 - **D6 Shared state — (a) confirmed.** Defer all; v1 effects are
@@ -96,7 +96,7 @@ here.
   `when` while leaving open here. Corner cases in the same rule set:
   **`check: false` events must not declare effects** (the flavor
   early-return `game_core.py:895-901` never reaches an applier — the
-  `changes == []` flavor pins at `test_smoke.py:796/:924` depend on
+  `changes == []` flavor pins at `test_smoke.py:900/:1028` depend on
   that path staying clean), and passive types are legal only on the
   kind whose applier scans them.
 - **N2 — Generic-path penalty stays.** Claude's critique accepted
@@ -112,11 +112,11 @@ here.
   penalty; a designed no-penalty event uses `check: false`).
   Contradicts plan D3/§4.3's "delete the balance key" — superseded.
 - **N3 — `grant_xp.key` is a kind-keyed ref.** The plan's free-string
-  `key` misses `collect_references` (`content.py:226-258` emits edges
+  `key` misses `collect_references` (`content.py:340-401` emits edges
   only for ref/dyn_ref/pair/dict_int), so delete-blocking would miss
   it. Fix: `key` becomes `("dyn_ref", {"stats": "stats", "skills":
   "skills"})` keyed by the entry's `kind` (the `difficulty_target`
-  precedent, `content.py:145-150`), plus imperative rules dyn_ref
+  precedent, `content.py:257-262`), plus imperative rules dyn_ref
   can't express: `kind=stats/skills` ⇒ key required + resolves;
   `kind=player` ⇒ key must be **absent**.
 - **N4 — Reporting contract, written and pinned.** The plan's E3
@@ -186,7 +186,7 @@ schema-driven forms already give us.
    the pinned golden save re-pins deliberately (`DEV_GUIDE.md:478-490`).
 7. **Seeded tests and the golden save pin current behavior**; any
    change to draw order, defaults, or serialized shape is a deliberate
-   re-pin (`DEV_GUIDE.md:539-540`, `DEV_GUIDE.md:492-524`).
+   re-pin (`DEV_GUIDE.md:541-542`, `DEV_GUIDE.md:494-526`).
 8. **All slices end green + committed**; hard gates (`check_live`,
    `check_fuzz`) must pass, advisory tools (`check_design`) never fail
    the build (exit 0 by design).
@@ -197,22 +197,22 @@ schema-driven forms already give us.
 
 *(listed near the end; kept here to mirror EDITOR_BRIEF's section order.)*
 
-## Measured facts (verified 2026-10-26, this repo @ 27031a0)
+## Measured facts (verified 2026-10-26 @ 27031a0; re-anchored 2026-10-28 @ 3bd972c)
 
 ### Every hardcoded effect-like hook in the engine
 
 | Hook | Location | Data source today | Pinned by |
 |---|---|---|---|
-| Gather behavior | `game_core.py:996-1031` (`_apply_gather_item`) | balance costs `GATHER_ENERGY_COST`/`GATHER_HUNGER_COST` (`:246-247`, applied `:1009-1010`), gather block per-action (item/yield/messages/difficulty), tool bonuses from item records via `TOOL_BONUSES` (`:95-97`, scan `:1024-1028`), success template `.format(amount=…)` `:1030` | `test_smoke.py:181-193` (validation), `:516` (auto-pass yields), `:805-807` (fail = no yield, still XP), `:879` (1-3 base + axe), `:900` (+1 once, copies don't stack) |
-| Rest behavior | `game_core.py:1149-1161` (`_apply_rest`) | balance `REST_FOOD_*`/`REST_EMPTY_*` (`:250-256`); eats via `_eat_until_recovered` | `test_smoke.py:632-634` (empty rest +10/+5), `:527-530` (rest eats to full recovery), `:859-864` (two-berry +10% math) |
-| Sleep behavior | `game_core.py:1163-1173` (`_apply_sleep`) | balance `SLEEP_*` (`:259-264`); night hunger `+SLEEP_HUNGER_NIGHT` `:1165` | `test_smoke.py:542` (food sleep recovers fully); death/starve sections (FOOD=0 empty-sleep paths) |
-| Generalized eating | `game_core.py:1115-1147` (`_eat_until_recovered`) | `FOOD_ITEMS` order from content `food` tiers (`game_core.py:275-283`); Batch-5 user rule (best-first, eat-to-saturation, downgrade, shortfall only when bare) + the review-fix progress guard (`:1130-1141`: bites that cannot move any stat are refused) | `test_smoke.py:544-578` (tier downgrade, shortfall, no-waste), `:582-602` (pantry guard) |
-| Build/craft behavior | `game_core.py:1033-1098` (`_apply_build_craft`) | pattern record (skill_req `:1055`, materials committed up-front `:1074-1075`, work progress `:1084-1097`); completion note embeds `pattern.description` `:1090` | `test_smoke.py:846-864` (completion, description surfaces `:857`), `:866-900` (axe craft→gather chain, stacking) |
-| Building passive bonus (THE hardcoded effect) | `game_core.py:990-994` (`_recovery`): `lean_to` branch adds `LEAN_TO_RECOVERY_BONUS` | balance key `LEAN_TO_RECOVERY_BONUS` (`game_core.py:240`; `content/balance.json:14`) | `test_smoke.py:859-864` (+32/+50 = ×1.1) |
-| Event resolution | `game_core.py:880-945` (`_resolve_event`) | per-event `difficulty` override `:918-919`; `EVENT_XP_SUCCESS`/`FAILURE` `:922-929` (bound `:233-234`); `EVENT_FAILURE_HEALTH` on fail `:930-932` (bound `:235`) | `test_smoke.py:911-947` (named events), `:776-782` (XP awards, health −5), `:757-783` (check display, record-DC regression) |
-| Stat-XP hook | `game_core.py:573-580` (run_slot) from `ACTION_STAT_XP` (`:120-124`, built from actions' `stat_xp`) | action record `stat_xp: [stat, int]` | `test_smoke.py:933-939` |
-| Difficulty overrides (per-record) | events `:918-919`; gather `cfg.get("difficulty")` `:1014/:1018`; pattern `:1077`; globals `EVENT_DIFFICULTY`/`ACTION_DIFFICULTY` `:230/:232` | record fields (opt) | `:754-761` (event), `:181-193` (gather validation), `difficulty_target` stat-aim block (~`:933`-adjacent; nitpick #5) |
-| **`pattern.effect` is display-only** | read by UI at `main.py:418-419` (tooltip) and `main.py:680-681` (picker); **never read by game_core** (grep: zero engine hits) | the string merely *documents* the hardcoded lean-to mechanic (`content/patterns.json:12` vs code `:992-993`) — drift-prone by construction | description pin `test_smoke.py:835`; `DEV_GUIDE.md:170-172` already defers "unify into records when the effects registry lands" |
+| Gather behavior | `game_core.py:1012-1047` (`_apply_gather_item`) | balance costs `GATHER_ENERGY_COST`/`GATHER_HUNGER_COST` (`:246-247`, applied `:1025-1026`), gather block per-action (item/yield/messages/difficulty), tool bonuses from item records via `TOOL_BONUSES` (`:95-97`, scan `:1040-1044`), success template `.format(amount=…)` `:1046` | `test_smoke.py:181-193` (validation), `:619` (auto-pass yields), `:909-911` (fail = no yield, still XP), `:983` (1-3 base + axe), `:1004` (+1 once, copies don't stack) |
+| Rest behavior | `game_core.py:1165-1177` (`_apply_rest`) | balance `REST_FOOD_*`/`REST_EMPTY_*` (`:250-256`); eats via `_eat_until_recovered` | `test_smoke.py:736-738` (empty rest +10/+5), `:631-634` (rest eats to full recovery), `:963-968` (two-berry +10% math) |
+| Sleep behavior | `game_core.py:1179-1189` (`_apply_sleep`) | balance `SLEEP_*` (`:259-264`); night hunger `+SLEEP_HUNGER_NIGHT` `:1181` | `test_smoke.py:646` (food sleep recovers fully); death/starve sections (FOOD=0 empty-sleep paths) |
+| Generalized eating | `game_core.py:1131-1163` (`_eat_until_recovered`) | `FOOD_ITEMS` order from content `food` tiers (`game_core.py:275-283`); Batch-5 user rule (best-first, eat-to-saturation, downgrade, shortfall only when bare) + the review-fix progress guard (`:1146-1157`: bites that cannot move any stat are refused) | `test_smoke.py:648-682` (tier downgrade, shortfall, no-waste), `:686-706` (pantry guard) |
+| Build/craft behavior | `game_core.py:1049-1114` (`_apply_build_craft`) | pattern record (skill_req `:1071`, materials committed up-front `:1090-1091`, work progress `:1100-1113`); completion note embeds `pattern.description` `:1106` | `test_smoke.py:950-968` (completion, description surfaces `:961`), `:970-1004` (axe craft→gather chain, stacking) |
+| **First migrated effect (E2): building `recovery_bonus`** | `game_core.py:990-1010` (`_recovery`): sums `mult` over built buildings' pattern effects, floors once | lean_to pattern record `content/patterns.json:12-17` (`LEGAL_EFFECTS["patterns"]` enables it; `LEAN_TO_RECOVERY_BONUS` retired from balance.json/BALANCE_TYPES/binding) | `test_smoke.py:963-968` (+32/+50 = ×1.1), `:1262-1283` (sum-vs-max: 15→18 with two sources) |
+| Event resolution | `game_core.py:880-945` (`_resolve_event`) | per-event `difficulty` override `:918-919`; `EVENT_XP_SUCCESS`/`FAILURE` `:922-929` (bound `:235-236`); `EVENT_FAILURE_HEALTH` on fail `:930-932` (bound `:237` — stays: the generic-path penalty, N2) | `test_smoke.py:1015-1051` (named events), `:880-886` (XP awards, health −5), `:861-887` (check display, record-DC regression) |
+| Stat-XP hook | `game_core.py:573-580` (run_slot) from `ACTION_STAT_XP` (`:120-124`, built from actions' `stat_xp`) | action record `stat_xp: [stat, int]` | `test_smoke.py:1037-1043` |
+| Difficulty overrides (per-record) | events `:918-919`; gather `cfg.get("difficulty")` `:1030/:1034`; pattern `:1093`; globals `EVENT_DIFFICULTY`/`ACTION_DIFFICULTY` `:232/:234` | record fields (opt) | `:858-865` (event), `:181-193` (gather validation), `difficulty_target` stat-aim block (~`:1037`-adjacent; nitpick #5) |
+| **`pattern.effect` — display now derives from effects (E2/D4)** | read by UI at `main.py:427-429` (tooltip) and `main.py:690-692` (picker); effect-bearing records render `content.effect_text()`, the legacy string is fallback only | lean_to's hand string is **gone** (superseded by `content/patterns.json:12-17`); the axe keeps its string until E4 — the measured drift example (`patterns.json:12` vs old code `:992-993`) is now closed for migrated records | description pin `test_smoke.py:939`; `DEV_GUIDE.md:169-174` documents "effects live on their record" |
 
 ### RNG draw order per slot (the seeded contract)
 
@@ -221,22 +221,22 @@ schema-driven forms already give us.
    (first draw of every slot).
 2. **Behavior check** (non-build paths): one `_skill_check` die
    `randint(1, CHECK_DIE)` at `:974` or `_stat_check` at `:986`
-   (aimed by `difficulty_target`, `:1012-1018`).
-3. **Yield draw** — `randint(low, high)` at `:1021`, success only.
-4. Build/craft check die at `:1077` (replaces 2–3 for those behaviors).
+   (aimed by `difficulty_target`, `:1028-1034`).
+3. **Yield draw** — `randint(low, high)` at `:1037`, success only.
+4. Build/craft check die at `:1093` (replaces 2–3 for those behaviors).
 5. **Event pick** — `rng.choice(eligible)` at `:878` (via `_pick_event`,
    `:890`), then **event check die** at `:916` when contributors exist.
 
-`_apply_gather_item`'s docstring (`:1003-1005`) already pins this as
+`_apply_gather_item`'s docstring (`:1019-1021`) already pins this as
 "the seeded contract": costs before any draw, one check draw, one yield
 draw on success, tool bonus after with no draw. Tool bonuses
-(`:1024-1028`), XP grants (`:561-580`), materials spend (`:1074-1075`),
-eating (`:1115-1134`), and completion (`:1084-1097`) draw nothing.
+(`:1040-1044`), XP grants (`:561-580`), materials spend (`:1090-1091`),
+eating (`:1131-1150`), and completion (`:1100-1113`) draw nothing.
 `abort_day` rewinds to the `begin_day` snapshot incl. RNG state
 (`game_core.py:483-486` capture, `:632-641` restore), so aborted days
-replay identically (`test_smoke.py:650-670`: state equality + identical
+replay identically (`test_smoke.py:754-774`: state equality + identical
 replay). House rule: **a new `randint` shifts every seeded sequence**
-(`DEV_GUIDE.md:539-540`).
+(`DEV_GUIDE.md:541-542`).
 
 ### Save facts
 
@@ -244,18 +244,18 @@ replay). House rule: **a new `randint` shifts every seeded sequence**
 (`game_core.py:726-727`), stamped by `to_dict` (`:733-734`), gated by
 `from_dict` (`:786-790`). Golden save:
 `tests/fixtures/golden_save.json`, re-pinned only deliberately via
-`python tests/make_golden_save.py` (`DEV_GUIDE.md:482-490`,
-`test_smoke.py:733-746`). Any effect state the engine gains must be
-serialized per the persistence recipe (`DEV_GUIDE.md:469-477`).
+`python tests/make_golden_save.py` (`DEV_GUIDE.md:484-492`,
+`test_smoke.py:837-850`). Any effect state the engine gains must be
+serialized per the persistence recipe (`DEV_GUIDE.md:471-479`).
 
 ### Review-facts section (2026-10-26 external review; all verified in-repo, post-`27031a0`)
 
 - **Pantry drain (fixed; the class matters for effects).** The eat
   loop used to bite until stats saturated — with validator-legal zero
   `REST/SLEEP_FOOD_*` gains it drained the whole pantry for nothing.
-  Fixed by a progress guard (`game_core.py:1130-1141`): a bite that
+  Fixed by a progress guard (`game_core.py:1146-1157`): a bite that
   cannot move health/energy/hunger toward saturation is refused.
-  Nets: unit tests (`test_smoke.py:582-602`) and a fuzz variant plus a
+  Nets: unit tests (`test_smoke.py:686-706`) and a fuzz variant plus a
   generic pantry-drain invariant in the fuzz play loop (`check_fuzz.py`:
   food may only be consumed while some stat moves toward saturation;
   the sleep probe allows for `SLEEP_HUNGER_NIGHT`). Lesson for the
@@ -272,7 +272,7 @@ serialized per the persistence recipe (`DEV_GUIDE.md:469-477`).
   mutation. (D4 covers effect *text*; this is the *summary* channel.)
 - **No discriminated-union spec exists.** SCHEMA's vocabulary is
   string/int/number/`opt`/`pair`/`ref`/`dict_int`/`nested`
-  (`content.py:95-115` for items) — effect params vary by type, so
+  (`content.py:205-227` for items) — effect params vary by type, so
   E1's read-only display and E4's editable rows both need a new typed
   effect-list spec tag plus matching editor branches (the Tunables
   sheet has no `list` branch either, `editor.py:259-284`).
@@ -280,30 +280,31 @@ serialized per the persistence recipe (`DEV_GUIDE.md:469-477`).
 
 ### Which balance entries would move onto records (if numbers relocate)
 
-House split rule today (`DEV_GUIDE.md:159-174`): **balance.json =
+House split rule today (`DEV_GUIDE.md:158-176`): **balance.json =
 global knobs; intrinsic values live with their record** — and
-`DEV_GUIDE.md:170-172` already names the lean-to branch as the first
-thing the effects registry should absorb. Moving a number is a
+`DEV_GUIDE.md:169-174` now documents effects-on-records (E2 executed
+the lean-to migration this section named). Moving a number is a
 four-touch cost chain (verified): remove the balance key
 (`content/balance.json`), remove it from `BALANCE_TYPES`/`BALANCE_KEYS`
-(`content.py:63-81` — a code edit by design, `DEV_GUIDE.md:163-164`),
-remove the engine binding (`game_core.py:224-264` block; cross-checked
-by `validate_content` `:1242-1252`), and add the record field + SCHEMA
+(`content.py:63-81` — a code edit by design, `DEV_GUIDE.md:162-163`),
+remove the engine binding (`game_core.py:226-264` block; cross-checked
+by `validate_content` `:1258-1268`), and add the record field + SCHEMA
 entry (auto-renders in forms and in **Tunables**, below).
 
 | Balance keys (balance.json lines) | Bound at | Consumed at | Natural owning record |
 |---|---|---|---|
-| `LEAN_TO_RECOVERY_BONUS` (14) | `game_core.py:240` | `_recovery` `:992-993` | the lean_to *pattern*/building — the canonical first effects migration |
-| `GATHER_ENERGY_COST`/`GATHER_HUNGER_COST` (15-16) | `:246-247` | `:1009-1010` | each gather action's block (already holds yield + difficulty per-action — the precedent) |
-| `REST_FOOD_HEALTH`/`ENERGY`/`HUNGER_NET`, `REST_EMPTY_*` (17-22) | `:250-256` | `_apply_rest` `:1149-1161` | the `rest` action record |
-| `SLEEP_HUNGER_NIGHT`, `SLEEP_FOOD_*`, `SLEEP_EMPTY_*` (23-28) | `:259-264` | `_apply_sleep` `:1163-1173` | **no owner record exists** — sleep runs from `complete_day`, not an action (actions.json = gather_food, gather_wood, rest, build, craft), so D3(b) has no home to move these to without inventing one |
-| `EVENT_XP_SUCCESS`/`FAILURE`, `EVENT_FAILURE_HEALTH` (10-12) | `:233-235` | `:922-932` | each event record (per-event `difficulty` `:918-919` is the per-record-numbers precedent) |
-| Borderline: `ACTION_XP`/`SKILL_XP` (5-6) | `:224-226` | `:562/:568` | per-action XP could localize; global keeps pacing uniform — a D3 question |
-| Stays global (curves/RNG/pacing): `MAX_VITAL`, `XP_TO_NEXT`, `XP_COST_STEP`, `CHECK_DIE`, `EVENT_CHANCE` | `:305/:308-310/:229/:238` | various | engine curves and the RNG contract — see D2 |
+| ~~`LEAN_TO_RECOVERY_BONUS`~~ — **retired in E2** (was 14; was `game_core.py:240`/`:992-993`) | — | now: `_recovery` `game_core.py:990-1010` reads `content/patterns.json:12-17` | the lean_to pattern — migrated, the canonical first effects move |
+| `GATHER_ENERGY_COST`/`GATHER_HUNGER_COST` (14-15) | `:246-247` | `:1025-1026` | each gather action's block (already holds yield + difficulty per-action — the precedent) |
+| `REST_FOOD_HEALTH`/`ENERGY`/`HUNGER_NET`, `REST_EMPTY_*` (16-21) | `:250-256` | `_apply_rest` `:1165-1177` | the `rest` action record |
+| `SLEEP_HUNGER_NIGHT`, `SLEEP_FOOD_*`, `SLEEP_EMPTY_*` (22-27) | `:259-264` | `_apply_sleep` `:1179-1189` | **no owner record exists** — sleep runs from `complete_day`, not an action (actions.json = gather_food, gather_wood, rest, build, craft), so D3(b) has no home to move these to without inventing one |
+| `EVENT_XP_SUCCESS`/`FAILURE`, `EVENT_FAILURE_HEALTH` (10-12) | `:235-237` | `:922-932` | each event record (per-event `difficulty` `:918-919` is the per-record-numbers precedent); **but N2 keeps `EVENT_FAILURE_HEALTH` global** as the generic-path penalty |
+| Borderline: `ACTION_XP`/`SKILL_XP` (5-6) | `:226-228` | `:562/:568` | per-action XP could localize; global keeps pacing uniform — a D3 question |
+| Stays global (curves/RNG/pacing): `MAX_VITAL`, `XP_TO_NEXT`, `XP_COST_STEP`, `CHECK_DIE`, `EVENT_CHANCE` | `:305/:308-310/:231/:240` | various | engine curves and the RNG contract — see D2 |
 
 Already-moved precedents (proof the model works): `tool_bonus` on item
-records (`game_core.py:95-97`, scanned `:1024-1028`), per-record
-`difficulty` everywhere, pattern `work`/`skill_req`/`materials`.
+records (`game_core.py:95-97`, scanned `:1040-1044`), per-record
+`difficulty` everywhere, pattern `work`/`skill_req`/`materials`, and —
+since E2 — `recovery_bonus` on the lean_to pattern.
 
 **Tunables impact** (the editor's aggregate sheet,
 `editor.py:236-284`): it walks SCHEMA and shows every int/number
@@ -326,14 +327,14 @@ to Tunables until a slice adds that branch.
   yet** — zero behavior change; golden save untouched. Tests:
   validation mutations.
 - **E2 — First application seam: the lean-to migration.** Replace the
-  hardcoded `_recovery` branch (`game_core.py:992-993`) with a passive
-  effect read from the pattern record (`DEV_GUIDE.md:170-172`'s stated
+  hardcoded `_recovery` branch (`game_core.py:1006-1009`) with a passive
+  effect read from the pattern record (`DEV_GUIDE.md:169-174`'s stated
   target). Gameplay stays byte-equivalent (the +32/+50 pins at
-  `test_smoke.py:859-864` must not flinch); `LEAN_TO_RECOVERY_BONUS`
+  `test_smoke.py:963-968` must not flinch); `LEAN_TO_RECOVERY_BONUS`
   retires from balance via the cost chain above.
 - **E3 — Triggered ops at documented points.** Op vocabulary (grant XP,
   damage/heal, give/consume item …) applied where events and outcomes
-  resolve (`_resolve_event` `:880-945`, completion `:1084-1091`) —
+  resolve (`_resolve_event` `:880-945`, completion `:1100-1107`) —
   effects execute AFTER existing draws and draw nothing themselves
   (per D2, whichever way it lands). May convert hardcodes like
   `EVENT_FAILURE_HEALTH` into event-record ops.
@@ -353,14 +354,14 @@ Each slice ends green + committed; no slice requires a later one.
 
 - **D1 — Stacking and order.** When several effects touch the same
   target: (a) same-type don't stack, max wins (the tool_bonus
-  precedent, `game_core.py:1022-1027`); (b) additively sum; (c)
+  precedent, `game_core.py:1038-1043`); (b) additively sum; (c)
   declaration order with first-wins/last-wins; (d) cap the count.
   Also undecided: whether a passive *replaces* or *multiplies* the base
   number, and how passives compose with `_recovery`'s existing
   ×(1+bonus). Rounding belongs to this decision: `_recovery` floors on
-  every application (`int(amount * 1.1)`, `:992-993`), so
+  every application (`int(amount * 1.1)`, `:1006-1009`), so
   sum-then-floor and floor-then-sum give different totals — the pinned
-  +32/+50 lean-to numbers (`test_smoke.py:859-864`) depend on which
+  +32/+50 lean-to numbers (`test_smoke.py:963-968`) depend on which
   wins. Trade-offs: (a) simplest + precedent, but caps design
   space; (b) enables compounding builds, needs balance guardrails;
   (c) interacts with the order-is-data constraints; (d) arbitrary feel.
@@ -368,32 +369,34 @@ Each slice ends green + committed; no slice requires a later one.
   (chance `:533` → check → yield → event choice `:878` → event check
   `:916`) stays frozen and effects run deterministically after draws
   (safest for seeds, the golden save, and `abort_day` replay
-  `test_smoke.py:650-670`); (b) effects may draw from the main rng
+  `test_smoke.py:754-774`); (b) effects may draw from the main rng
   (expressive, but every seeded sequence shifts — `DEV_GUIDE.md:539`
   — and all pins must be re-derived); (c) effects get a separate seeded
   rng (isolated, but a second state to serialize; save implications).
   Trade-offs: expressiveness vs the pinned-seed discipline the whole
   suite rests on.
 - **D3 — Where numbers live.** (a) Extend the existing split rule
-  (`DEV_GUIDE.md:159-174`): effect params live on records, global
+  (`DEV_GUIDE.md:158-176`): effect params live on records, global
   curves stay in balance, migrate the table above opportunistically;
   (b) move ALL listed balance keys onto owning records in one pass
   (one honest churn, Tunables follows automatically); (c) hybrid —
   migrate only what the first real effects need (lean-to first, per
-  `DEV_GUIDE.md:170-172`). Trade-offs: one big migration vs
+  `DEV_GUIDE.md:169-174` — executed in E2). Trade-offs: one big migration vs
   incremental churn vs knobs that stay invisible next to their records.
 - **D4 — Generated effect text.** (a) Content-provided template strings
-  per effect (the gather precedent, `.format(amount=…)` `:1030`);
+  per effect (the gather precedent, `.format(amount=…)` `:1046`);
   (b) engine-built phrases from type+params (centralized voice, no
   author typos); (c) hybrid — engine default, content override. Directly
   entangled with the measured drift risk: `pattern.effect` strings are
-  pure UI text today (`main.py:418-419/:680-681`) documenting code that
-  can diverge (`game_core.py:992-993` vs `content/patterns.json:12`) —
+  pure UI text today (`main.py:427-429/:690-692`, generating from
+  effects since E2) documenting code that
+  can diverge (`game_core.py:992-993` vs `content/patterns.json:12` —
+  the historical example; the string is now retired) —
   this choice decides whether effect text becomes
   generated-from-mechanics (drift impossible) or stays hand-written
   (drift persists).
 - **D5 — Eating policy.** Batch-5 rules are code
-  (`game_core.py:1115-1147`: best-tier-first, eat-to-saturation,
+  (`game_core.py:1131-1163`: best-tier-first, eat-to-saturation,
   downgrade, shortfall only on a bare pantry, plus the review-fix
   progress guard — bites that cannot move health/energy/hunger toward
   saturation are refused). Options: (a) keep the
@@ -414,9 +417,9 @@ Each slice ends green + committed; no slice requires a later one.
   speculative-design risk (b)/(c) vs rework/migration risk (a), plus
   save-size and golden-drift costs.
 - **D7 — Absorb `food`/`tool_bonus`, or coexist?** Items already carry
-  three separate mechanics: the `food` quality tier (`content.py:112`,
-  validation `:380-387`), `tool_bonus` (`content.py:113`, scan
-  `game_core.py:1024-1028`), and (eventually) effects. Options: (a)
+  three separate mechanics: the `food` quality tier (`content.py:223`,
+  validation `:524-531`), `tool_bonus` (`content.py:224`, scan
+  `game_core.py:1040-1044`), and (eventually) effects. Options: (a)
   coexist — effects add NEW mechanics only, `food`/`tool_bonus` stay
   bespoke (fastest, but three parallel item systems and three editor
   renderings forever); (b) absorb both into effects (one vocabulary,

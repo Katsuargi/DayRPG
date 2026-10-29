@@ -94,9 +94,21 @@ Ordered; phases have one concern each (a failure has one suspect).
   `test_smoke` E1 block (zero-pair pin on items AND patterns, all
   validation mutations, N3 presence rules, N3 edges, live clean) and
   `test_editor_gui` E1 render block (generated text in stacked view +
-  form, no editor widgets, no mount mutation, clean close). Next: **E2**
-  — lean-to passive (`stack: sum`, four-touch retirement of
-  `LEAN_TO_RECOVERY_BONUS`, +32/+50 pin must not move).
+  form, no editor widgets, no mount mutation, clean close). **E2 is done
+  and green** (`3bd972c`): `Pattern.effects` field + builder, `_recovery`
+  SUMS `recovery_bonus` mults over built buildings and floors once
+  (D1 — the +32/+50 pins hold; discriminating sum-vs-max test at
+  `test_smoke.py:1262-1283` gives 15→18 with two sources),
+  `LEAN_TO_RECOVERY_BONUS` retired via the four-touch chain (both
+  balance.json copies, BALANCE_TYPES, game_core binding — N5 grep
+  confirmed clean), `LEGAL_EFFECTS` enabled
+  `patterns/recovery_bonus/always` in the same commit (N1), lean_to
+  carries `content/patterns.json:12-17` (hand effect string dropped;
+  `main.py` derives tooltip/picker text from `effect_text()` with legacy
+  fallback for the axe until E4). The brief's citations were re-anchored
+  to `3bd972c` (E1+E2 shifted lines; stale-token scan clean). Next: **E3**
+  — triggered event ops (applier + N2 generic-path split + N3 rules +
+  N4 reporting test; `EVENT_FAILURE_HEALTH` STAYS global per N2).
 
 ### Next: editor (phases 2+), then deferred design work
 
