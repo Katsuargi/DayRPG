@@ -47,3 +47,4 @@ hash must exist first). Docs-only commits are listed for continuity.
 - 2026-10-28 | effects E2: first applier — recovery_bonus sums over built buildings, key retired, N1 pair enabled, D4 display generation; brief re-anchored | 3bd972c | full suite green incl. fuzz + lint
 - 2026-10-28 | effects E3: triggered event ops — N2 split, four-type applier, dual-channel reporting, events LEGAL pair; brief re-anchored | 7cbacaa | full suite green incl. fuzz + lint
 - 2026-10-28 | effects E5: editable effect rows + legality-gated add + Tunables effects branch + grant_item design-lint rule | 786a49d | full suite green incl. fuzz + lint
+- 2026-10-28 | effects E4: absorb tool_bonus into yield_bonus effects (D7c) — ITEM_EFFECTS table replaces TOOL_BONUSES, gather scan reads owned items, axe item migrates, N1 pair enabled; brief re-anchored + HANDOFF effects-complete record | 72515ac | full suite green incl. fuzz + lint (E4); docs-only follow-up

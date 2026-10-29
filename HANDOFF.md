@@ -29,7 +29,8 @@ Gather is fully parameterized: the `gather_food`/`gather_wood`
 behaviors collapsed into one `gather_item` behavior whose handler
 (`_apply_gather_item`) reads a per-action `gather` block (item, yield
 [min,max], success/fail messages with `{amount}`, optional
-`tool_bonus` [tool id, flat] and `difficulty` override). The five
+`difficulty` override; since E4 tool bonuses are `yield_bonus`
+effects on items, scanned from owned copies). The five
 gather balance keys (`FOOD_*`, `WOOD_*`, `AXE_WOOD_BONUS`) moved into
 those blocks; shared costs stay in balance.json. **A new gather kind
 (Gather Metal) is now pure content** — new item + skill + action
@@ -105,8 +106,9 @@ Ordered; phases have one concern each (a failure has one suspect).
   `patterns/recovery_bonus/always` in the same commit (N1), lean_to
   carries `content/patterns.json:12-17` (hand effect string dropped;
   `main.py` derives tooltip/picker text from `effect_text()` with legacy
-  fallback for the axe until E4). The brief's citations were re-anchored
-  to `7cbacaa` (E1+E2+E3 shifted lines; stale-token scan clean). **E3 is
+  fallback for the axe PATTERN — its ITEM migrated in E4). The brief's
+  citations were re-anchored to `72515ac` (E1–E3, E5, E4 all shifted
+  lines; stale-token scan clean). **E3 is
   done and green** (`7cbacaa`): `RandomEvent.effects`, `_resolve_event`
   N2 split (declared sides run INSTEAD of the generic penalty; the
   penalty stays for chosen-is-None at `:944-949`), `_apply_effect`
@@ -134,10 +136,15 @@ Ordered; phases have one concern each (a failure has one suspect).
   materials `✕` is no longer the last one (effects trails it), and
   the E1 mount block now asserts the editable model. Brief: Tunables
   prose + cites re-anchored, review-facts clause updated. Next:
-  **E4** (optional) — tool_bonus → yield_bonus absorption: items SCHEMA
-  field deletion, `_check_tool_bonuses`/`TOOL_BONUSES` removal, economy
-  view special-case, GUI edit test rewrite (now possible — E5 landed),
-  N1 enables items×yield_bonus.
+  **E4 — DONE and green** (`72515ac`) — tool_bonus → yield_bonus
+  absorption (D7c): `ITEM_EFFECTS` replaces `TOOL_BONUSES`, items SCHEMA
+  field + `_check_tool_bonuses` deleted, gather scans owned items'
+  effects (max-wins, no draws), axe item migrates (tooltip appends
+  generated effect lines per D4), economy view reads effects, fishing
+  GUI test rewritten onto E5 rows, N1 enables items×yield_bonus.
+  **The effects layer is complete**: E1→E2→E3→E5→E4 all shipped, every
+  `LEGAL_EFFECTS` pair enabled with its applier, brief fully
+  re-anchored at `72515ac`.
 
 ### Next: editor (phases 2+), then deferred design work
 
@@ -226,7 +233,7 @@ Ordered; phases have one concern each (a failure has one suspect).
   the user's fishing pass verbatim, model-first: add skill `fishing`
   → add item `fish` → add `go_fishing` (behavior `gather_item`,
   same-session skill/item dropdowns, gather child form) → add
-  `fishing_rod` with a tool_bonus pair → one Save-All → reload →
+  `fishing_rod` with a yield_bonus effect → one Save-All → reload →
   every link and the collect_references edge intact. **2e is done and
   green — Phase 2 (the content editor) is COMPLETE**: per D4 (raw
   pane deliberately deferred — correcting this line's earlier "raw
@@ -347,7 +354,8 @@ Ordered; phases have one concern each (a failure has one suspect).
   live in items.json as inventory records (`wood_axe`), not a separate
   `engine.tools` table (legacy saves fold their tools into inventory
   on load). The bonus moved onto the tool's item —
-  `tool_bonus: ["gather_wood", 1]` — and a gather action scans
+  first `tool_bonus: ["gather_wood", 1]`, then (E4) a `yield_bonus`
+  effect — and a gather action scans
   inventory for items tagged with its own id, applying the HIGHEST
   amount (copies never stack; tier numbers deferred until merchants
   need pricing). Craft pattern ids must be item ids (validated); the
