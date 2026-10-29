@@ -79,8 +79,24 @@ Ordered; phases have one concern each (a failure has one suspect).
   (legality table, generic-path penalty kept, `grant_xp.key` rules,
   reporting contract + test, clean retirements). Per-slice steps and
   worked JSON live in `EFFECTS_PLAN_DEEPSEEK.md` (its banner lists the
-  superseded passages). No effects code exists yet — next step is E1
-  (registry + validation + read-only display, zero behavior change).
+  superseded passages). **E1 is done and green** (`5c25301`):
+  `content.py` carries the registry (TRIGGERS/VITALS/XP_KINDS,
+  EFFECT_TYPES with per-type `stack`, `LEGAL_EFFECTS` empty per N1),
+  the `("effect", None)` spec tag on items/patterns/events SCHEMA,
+  `_check_effects` (shape → params → N3 kind-keyed grant_xp rules →
+  legality LAST so the empty table never masks a typo, N2's
+  check:false corner) with call sites in `validate_bundle`, effect
+  refs flowing through `collect_references` (edges under
+  `effects.<type>.<param>`), and `effect_text()` (D4 generation).
+  Editor renders effects read-only (viewer `_value_text` branch +
+  `RecordForm._add_effects_readonly` — no vars/rowvars registered, so
+  E5's editable rows slot in without touching the mount path). Tests:
+  `test_smoke` E1 block (zero-pair pin on items AND patterns, all
+  validation mutations, N3 presence rules, N3 edges, live clean) and
+  `test_editor_gui` E1 render block (generated text in stacked view +
+  form, no editor widgets, no mount mutation, clean close). Next: **E2**
+  — lean-to passive (`stack: sum`, four-touch retirement of
+  `LEAN_TO_RECOVERY_BONUS`, +32/+50 pin must not move).
 
 ### Next: editor (phases 2+), then deferred design work
 
