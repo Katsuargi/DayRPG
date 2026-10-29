@@ -323,12 +323,13 @@ try:
     ), probs
     shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
 
-    # (l) tool-bonus wiring: item tag must name an action; a craft
-    # pattern id must be an inventory item (tools are items now)
+    # (l) effects wiring: a tool's yield_bonus must name a real action;
+    # a craft pattern id must be an inventory item (tools are items now)
     shutil.copy(_FIXTURE / "items.json", _tmp / "items.json")
     shutil.copy(_FIXTURE / "patterns.json", _tmp / "patterns.json")
     items = json.loads((_tmp / "items.json").read_text(encoding="utf-8"))
-    items[0]["tool_bonus"] = ["gather_stone", 1]  # unknown action tag
+    items[0]["effects"] = [{"type": "yield_bonus",
+                            "action": "gather_stone", "add": 1}]  # bad ref
     (_tmp / "items.json").write_text(json.dumps(items, indent=2),
                                      encoding="utf-8")
     pats = json.loads((_tmp / "patterns.json").read_text(encoding="utf-8"))
@@ -338,7 +339,7 @@ try:
     bundle, probs = content.try_load_content(_tmp)
     assert bundle is not None, "schema problems must stay loadable"
     assert any(
-        p.startswith("items.json: 'berries'") and "tool_bonus" in p
+        p.startswith("items.json: 'berries'") and "gather_stone" in p
         for p in probs
     ), probs
     assert any(
@@ -503,11 +504,14 @@ _item["effects"] = [{"type": "grant_xp", "when": "on_success",
 probs = _eff_probs("items", _item)
 assert any("must not carry 'key'" in p for p in probs), probs
 
-# THE N1 GATING PIN: items×yield_bonus is still disabled (E4's pair),
-# while E2's pair — the same kind of well-formed entry on a pattern —
-# validates clean NOW, in the same commit that wired the applier.
+# THE N1 GATING PIN: E4 enabled items×yield_bonus (that validates
+# clean NOW, in the same commit that wired the applier), while an
+# un-enabled pair on the same record is still rejected.
 _item["effects"] = [{"type": "yield_bonus", "action": "gather_wood",
                      "add": 1}]
+probs = _eff_probs("items", _item)
+assert probs == [], "E4 enabled items x yield_bonus (N1)"
+_item["effects"] = [{"type": "recovery_bonus", "mult": 0.1}]
 probs = _eff_probs("items", _item)
 assert any("not (yet) allowed on items records" in p for p in probs), probs
 _pat = dict(_records_of("patterns", live_bundle)[0])

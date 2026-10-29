@@ -361,7 +361,8 @@ class ContentViewer:
             for pid, qty in sinks.get(iid, []):
                 tree.insert(knode, "end", text=f"{pid} ×{qty}", values=("",))
             if not sinks.get(iid):
-                if item.get("tool_bonus"):
+                if any(e.get("type") == "yield_bonus"
+                       for e in item.get("effects", ())):
                     tree.insert(knode, "end",
                                 text="equipment (held, not consumed)",
                                 values=("",))

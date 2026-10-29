@@ -657,10 +657,13 @@ try:
     rform.vars["id"].set("fishing_rod")
     rform.vars["name"].set("Fishing Rod")
     rform.vars["start"].set("0")
-    rform.rowvars["tool_bonus"][0][0].set("go_fishing")
-    rform.rowvars["tool_bonus"][0][1].set("1")
+    _btn("+ add effect").invoke()     # E4: items have a legal type now
+    erow = rform.rowvars["effects"][0]
+    erow["action"].set("go_fishing")
+    erow["add"].set("1")
     rod = viewer.bundle.items[-1]
-    assert rod["tool_bonus"] == ["go_fishing", 1], rod.get("tool_bonus")
+    assert rod["effects"] == [{"type": "yield_bonus", "when": "always",
+                               "action": "go_fishing", "add": 1}], rod
     assert viewer.problems == [], viewer.problems
 
     # ONE Save-All for items + actions; reload proves every link
@@ -672,7 +675,9 @@ try:
     acts = {a["id"]: a for a in viewer.bundle.actions}
     assert skills["fishing"]["name"] == "Fishing"
     assert items["fish"]["name"] == "Fish"
-    assert items["fishing_rod"]["tool_bonus"] == ["go_fishing", 1]
+    assert items["fishing_rod"]["effects"] == [
+        {"type": "yield_bonus", "when": "always",
+         "action": "go_fishing", "add": 1}]
     assert acts["go_fishing"]["behavior"] == "gather_item"
     assert acts["go_fishing"]["skill"] == "fishing"
     assert acts["go_fishing"]["gather"]["item"] == "fish"
@@ -940,16 +945,21 @@ try:
 
     # 6) N1 gating: items offer no add until E4; check:false forbids;
     #    check:true events offer the add (default side satisfies N2)
+    # E4 enabled items×yield_bonus — the add button appears; drive the
+    # form model (D17) so the revalidation actually refreshes
     idx_i6 = list(CONTENT_FILES).index("items")
     viewer6._render_file(idx_i6)
     viewer6._on_edit_toggle("items", "berries")
-    _noeff = [w for w in _walk(viewer6.records_frame)
-              if w.winfo_class() == "Button"
-              and str(w.cget("text")) == "+ add effect"]
-    assert not _noeff, "items have no legal effect type until E4"
-    _labels_i = [str(w.cget("text")) for w in _walk(viewer6.records_frame)
-                 if w.winfo_class() == "Label"]
-    assert any("no legal effect types" in t for t in _labels_i), _labels_i
+    _btn6("+ add effect").invoke()
+    fb6 = viewer6._forms[("items", "berries")]
+    erow_b = fb6.rowvars["effects"][0]
+    assert erow_b["type"].get() == "yield_bonus", \
+        "items' only legal type comes first"
+    assert erow_b["when"].get() == "always", erow_b["when"].get()
+    erow_b["add"].set("1")          # default int 0 predates the >=1 rule
+    berries6 = next(r for r in viewer6.bundle.items if r["id"] == "berries")
+    assert berries6["effects"][0]["add"] == 1, berries6["effects"]
+    assert viewer6.problems == [], viewer6.problems
     idx_e6 = list(CONTENT_FILES).index("events")
     viewer6._render_file(idx_e6)
     viewer6._on_edit_toggle("events", "quiet_moment")

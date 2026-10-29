@@ -28,10 +28,13 @@
     "id": "wood_axe",
     "name": "Wood Axe",
     "start": 0,
-    "tooltip": "Tool — tagged gather_wood: +1 wood per Gather Wood attempt while you own one. Best tool wins; extra copies don't stack.",
-    "tool_bonus": [
-      "gather_wood",
-      1
+    "tooltip": "Tool. Best tool wins; extra copies don't stack.",
+    "effects": [
+      {
+        "type": "yield_bonus",
+        "action": "gather_wood",
+        "add": 1
+      }
     ]
   }
 ]

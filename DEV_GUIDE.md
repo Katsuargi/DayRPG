@@ -92,7 +92,7 @@ just aren't hand-written anymore.
 | Action behavior + yields | `gather_item` params in the `gather` block of `actions.json` | `_apply_gather_item`, `_apply_rest`, `_apply_sleep` |
 | Skilled-action difficulty | `content/balance.json` | `ACTION_DIFFICULTY` → `_skill_check`; per-record `difficulty` overrides (gather block, pattern, event); `difficulty_target` on an action aims its check at a stat or skill |
 | Build/craft blueprints | `content/patterns.json` | `PATTERNS` (`Pattern` dataclass) → `_apply_build_craft`, `patterns_for` |
-| Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to); tool bonuses live on the tool's **item** (`items.json` → `tool_bonus`) and are scanned by `_apply_gather_item` |
+| Building/tool effects | effect *text* in `patterns.json`; effect *math* in code | `_recovery` (Lean to); tool bonuses are `yield_bonus` effects on the tool's **item** (`items.json` → `effects`) and are scanned by `_apply_gather_item` |
 | XP costs & level-ups | `balance.json` → `XP_TO_NEXT`, `XP_COST_STEP` | `xp_cost_for`, `add_xp` |
 | Death | (code) | `_check_game_over` (end of day only) |
 | Random events | `content/events.json` | `RANDOM_EVENTS` (`RandomEvent` dataclass) → `_pick_event` / `_resolve_event` |
@@ -162,8 +162,8 @@ class/module values in tests; override per instance.
   set is gated by `content.py BALANCE_KEYS` (adding a key is a code
   edit by design — `game_core` binds each at import).
 - **Intrinsic values live with their record** — a tool's bonus
-  (`tool_bonus` on the tool's **item** record: `[action id it serves,
-  flat amount]`), a blueprint's `work`/`skill_req`/`materials`,
+  (`yield_bonus` effect on the tool's **item** record: action it
+  serves + flat add), a blueprint's `work`/`skill_req`/`materials`,
   per-record `difficulty`. Adding content stays zero-Python, and the
   editor can create it without touching code.
 - **Effects live on their record** — the lean-to's `recovery_bonus`

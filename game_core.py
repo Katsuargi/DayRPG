@@ -19,6 +19,7 @@ from content import (
     BALANCE_KEYS,
     BEHAVIOR_HANDLERS,
     Content,
+    effect_text,
     GATHER_ITEM,
     Problem,
     load_content,
@@ -89,13 +90,12 @@ ACTION_GATHER: Dict[str, dict] = {
     if entry["behavior"] == GATHER_ITEM
 }
 
-#: tool_bonus: item id -> (action id it serves, flat bonus) — from
-#: items.json. A gather action scans inventory for items tagged with
-#: ITS id and applies the highest amount (copies never stack).
-TOOL_BONUSES: Dict[str, Tuple[str, int]] = {
-    entry["id"]: tuple(entry["tool_bonus"])
-    for entry in CONTENT.items
-    if "tool_bonus" in entry
+#: Per-item effect entries from items.json (E4 — the tool_bonus field
+#: absorbed into typed yield_bonus effects). A gather action scans
+#: OWNED items' yield_bonus entries tagged with ITS id and applies the
+#: highest amount (copies never stack).
+ITEM_EFFECTS: Dict[str, Tuple[dict, ...]] = {
+    entry["id"]: tuple(entry.get("effects", ())) for entry in CONTENT.items
 }
 
 #: difficulty_target: action id -> (kind, key) — explicit aim for an
@@ -133,8 +133,20 @@ SKILL_NAMES: Dict[str, str] = {
 
 #: Hover help for the left panel — lives with the content it describes
 #: (moved out of main.py so the Ren'Py frontend reads the same source).
+def _item_tooltip(entry: dict) -> str:
+    """Hand flavor, plus GENERATED effect lines when the item carries
+    effects (E4/D4: numbers are never hand-written beside data; the
+    hand `tooltip` stays flavor and the fallback for items without)."""
+    hand = entry.get("tooltip", "")
+    effs = entry.get("effects", ())
+    if not effs:
+        return hand
+    gen = "; ".join(effect_text(e) for e in effs)
+    return f"{hand} {gen}" if hand else gen
+
+
 INVENTORY_TOOLTIPS: Dict[str, str] = {
-    entry["id"]: entry.get("tooltip", "") for entry in CONTENT.items
+    entry["id"]: _item_tooltip(entry) for entry in CONTENT.items
 }
 SKILL_TOOLTIPS: Dict[str, str] = {
     key: record.get("tooltip", "") for key, record in CONTENT.skills.items()
@@ -1069,7 +1081,7 @@ class GameEngine:
 
         Kind-specific data comes from the action's gather block (item,
         yield range, messages, optional difficulty); tool bonuses come
-        from inventory items whose tool_bonus is tagged with this
+        from owned items' yield_bonus effects tagged with this
         action's id — highest owned amount wins, copies never stack.
         Draw order is the seeded contract: costs before any draw, one
         skill-check draw, one yield draw only on success, tool bonus
@@ -1090,12 +1102,17 @@ class GameEngine:
         if passed:
             low, high = cfg["yield"]
             amount = self.rng.randint(low, high)
-            # Best owned tool tagged for this action wins; copies of the
-            # same tool never stack (max over owned, not sum).
+            # Best owned tool for this action wins; copies of the
+            # same tool never stack (max over owned, not sum) — E4
+            # reads the absorbed tool_bonus as yield_bonus effects.
             bonus = 0
-            for item_id, (tagged, flat) in TOOL_BONUSES.items():
-                if tagged == action_id and self.inventory.get(item_id):
-                    bonus = max(bonus, flat)
+            for item_id in self.inventory:
+                if not self.inventory[item_id]:
+                    continue
+                for eff in ITEM_EFFECTS.get(item_id, ()):
+                    if (eff.get("type") == "yield_bonus"
+                            and eff.get("action") == action_id):
+                        bonus = max(bonus, eff["add"])
             amount += bonus
             self.inventory[cfg["item"]] += amount
             return True, cfg["success"].format(amount=amount)

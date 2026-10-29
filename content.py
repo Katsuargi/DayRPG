@@ -161,6 +161,9 @@ LEGAL_EFFECTS: Dict[str, Dict[str, Tuple[str, ...]]] = {
                "grant_xp": ("on_success", "on_failure"),
                "grant_item": ("on_success", "on_failure"),
                "consume_item": ("on_success", "on_failure")},
+    # E4 (with game_core's gather applier via ITEM_EFFECTS): the
+    # absorbed tool_bonus as a passive on the tool's item record.
+    "items": {"yield_bonus": ("always",)},
 }
 
 
@@ -226,7 +229,6 @@ SCHEMA: Dict[str, dict] = {
             "start": "int",
             "tooltip": ("opt", "string"),
             "food": ("opt", "int"),
-            "tool_bonus": ("opt", ("pair", ("ref", "actions"), "int")),
             "effects": ("opt", ("list", ("effect", None))),
         },
     },
@@ -555,8 +557,8 @@ def _check_gather(
     Required: item (existing id), yield [min, max] (1 <= min <= max —
     randint would crash otherwise), non-empty success/fail messages.
     Optional: difficulty (DC override; the engine default is
-    balance.json ACTION_DIFFICULTY). Tool bonuses moved to the tool's
-    item record (items.json tool_bonus) — see _check_tool_bonuses.
+    balance.json ACTION_DIFFICULTY). Tool bonuses live as yield_bonus
+    effects on the tool's item record — see _check_effects.
     """
     gwhere = f"{where}: 'gather'"
     if not isinstance(gather, dict):
@@ -885,37 +887,6 @@ def _check_balance(balance: Any, problems: List[str]) -> None:
         problems.append("balance.json: 'EVENT_CHANCE' must be between 0 and 1")
 
 
-def _check_tool_bonuses(
-    items: Any, action_ids: Set[str], problems: List[str]
-) -> None:
-    """Item tool_bonus: [action id it serves, flat bonus >= 1].
-
-    The action scans inventory for items tagged with its own id and
-    applies the highest amount (copies never stack).
-    """
-    if not isinstance(items, list):
-        return  # _check_items already reported the shape problem
-    for rec in items:
-        if not isinstance(rec, dict):
-            continue
-        bonus = rec.get("tool_bonus")
-        if bonus is None:
-            continue
-        where = f"items.json: {rec.get('id')!r}"
-        if (
-            not isinstance(bonus, (list, tuple))
-            or len(bonus) != 2
-            or not isinstance(bonus[0], str)
-            or bonus[0] not in action_ids
-            or not isinstance(bonus[1], int)
-            or isinstance(bonus[1], bool)
-            or bonus[1] < 1
-        ):
-            problems.append(
-                f"{where}: 'tool_bonus' must be [action id, integer >= 1]"
-            )
-
-
 def _check_effects(fname: str, records: Any, item_ids: Set[str],
                    action_ids: Set[str], skill_ids: Set[str],
                    stat_ids: Set[str], problems: List[str]) -> None:
@@ -1070,7 +1041,6 @@ def validate_bundle(content: Content) -> List[Problem]:
     action_ids = _check_actions(
         content.actions, skill_ids, stat_ids, item_ids, problems
     )
-    _check_tool_bonuses(content.items, action_ids, problems)
     _check_patterns(content.patterns, skill_ids, item_ids, problems)
     _check_events(content.events, action_ids, problems)
     _check_effects("items", content.items, item_ids, action_ids,
