@@ -1118,14 +1118,27 @@ class GameEngine:
         """Batch 5: eat best-tier-first until the food-recoverable stats
         are saturated (health/max, energy/max, hunger/0). Each tier is
         drained before downgrading; returns eaten ids in order — empty
-        means already satisfied or a bare larder (the shortfall only the
-        player's pantry can cause)."""
+        means already satisfied, a bare larder (the shortfall only the
+        player's pantry can cause), or gains that can change nothing
+        (the progress guard)."""
         eaten: List[str] = []
         for item_id in FOOD_ITEMS:
             while (self.inventory.get(item_id, 0) > 0
                    and not (self.health >= self.MAX_VITAL
                             and self.energy >= self.MAX_VITAL
                             and self.hunger <= 0)):
+                # Review guard: a bite that cannot move any target stat
+                # toward saturation would drain the pantry one item at a
+                # time (validator-legal zero/negative REST/SLEEP_FOOD_*
+                # values). The gains are per-behavior — identical for
+                # every tier — so refusing here refuses for all of them.
+                improves = (
+                    (self.health < self.MAX_VITAL and health_add > 0)
+                    or (self.energy < self.MAX_VITAL and energy_add > 0)
+                    or (self.hunger > 0 and hunger_add < 0)
+                )
+                if not improves:
+                    return eaten
                 self.inventory[item_id] -= 1
                 eaten.append(item_id)
                 self.health = clamp(self.health + self._recovery(health_add))

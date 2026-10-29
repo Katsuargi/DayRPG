@@ -87,6 +87,16 @@ def _skill_null(actions: Any, _files: Dict[str, Any]) -> None:
     actions[0]["skill"] = None  # unskilled gather: legal? the play says
 
 
+def _zero_food_gains(balance: Any, _files: Dict[str, Any]) -> None:
+    """Review finding: validator-legal ints that turn every bite into a
+    no-op — the eat loop must refuse rather than drain the pantry."""
+    for key in ("REST_FOOD_HEALTH", "REST_FOOD_ENERGY",
+                "REST_FOOD_HUNGER_NET",
+                "SLEEP_FOOD_HEALTH", "SLEEP_FOOD_ENERGY",
+                "SLEEP_FOOD_HUNGER_NET"):
+        balance[key] = 0
+
+
 def _extra_per_behavior(actions: Any, files: Dict[str, Any]) -> None:
     """One extra action per behavior (except build_craft — the Batch 2
     rule makes new ones impossible by design)."""
@@ -137,6 +147,7 @@ MUTATIONS: List[Tuple[str, str, str, Mutator]] = [
      lambda d, _f: d.update(EVENT_CHANCE=1.0)),
     ("EVENT_DIFFICULTY = 999", "balance", "play",
      lambda d, _f: d.update(EVENT_DIFFICULTY=999)),
+    ("balance zero food gains", "balance", "play", _zero_food_gains),
     ("gather yields 1..999", "actions", "play", _big_yield),
     ("patterns unreachable (req 999)", "patterns", "play",
      _unreachable_patterns),
@@ -165,13 +176,37 @@ def _build_variant(base: Path, fn: Mutator, filename: str) -> Path:
     return tmp
 
 
+def _food_state(engine: Any, foods: Any) -> Any:
+    """(total food, health, energy, hunger) snapshot at a probe point."""
+    return (sum(engine.inventory.get(i, 0) for i in foods),
+            engine.health, engine.energy, engine.hunger)
+
+
+def _check_food_progress(engine: Any, foods: Any, before: Any,
+                         hunger_floor: int = 0) -> None:
+    """Pantry-drain net: food may only be consumed while some target
+    stat moves toward saturation (health/energy up, hunger down).
+    `hunger_floor` widens the hunger baseline (the sleep cycle raises
+    night hunger before eating, so eating that rise back down still
+    counts as movement)."""
+    total, health, energy, hunger = before
+    if sum(engine.inventory.get(i, 0) for i in foods) >= total:
+        return  # nothing was eaten
+    moved = (engine.health > health or engine.energy > energy
+             or engine.hunger < hunger + hunger_floor)
+    assert moved, "food was consumed without any recovery progress"
+
+
 def _play(dirpath: str) -> int:
     """Child mode: bind the variant content, import the engine, play a
-    few seeded days, and hold every invariant check_live holds."""
+    few seeded days, and hold every invariant check_live holds — plus
+    the pantry-drain net (food may only be consumed while some target
+    stat moves toward saturation)."""
     import os
     os.environ["DAY_SCHEDULER_CONTENT_DIR"] = dirpath  # before game_core
     try:
-        from game_core import ACTION_ORDER, BUILD, CRAFT, GameEngine
+        from game_core import (ACTION_ORDER, BUILD, CRAFT, FOOD_ITEMS, REST,
+                               SLEEP_HUNGER_NIGHT, GameEngine)
     except BaseException as exc:  # ContentError = blocked; other = broke
         import content as _c
         if isinstance(exc, _c.ContentError):
@@ -195,6 +230,8 @@ def _play(dirpath: str) -> int:
                     options = engine.patterns_for(action)
                     provider = (
                         lambda _k, opts=options: opts[0].id if opts else None)
+                probe = (_food_state(engine, FOOD_ITEMS)
+                         if action == REST else None)
                 engine.run_slot(slot, pattern_provider=provider)
                 assert 0 <= engine.health <= engine.MAX_VITAL, engine.health
                 assert 0 <= engine.energy <= engine.MAX_VITAL, engine.energy
@@ -202,7 +239,12 @@ def _play(dirpath: str) -> int:
                 assert engine.xp >= 0 and engine.level >= 1
                 assert all(c >= 0 for c in engine.inventory.values())
                 assert engine.xp_next >= 1, engine.xp_next
+                if probe is not None:
+                    _check_food_progress(engine, FOOD_ITEMS, probe)
+            day_probe = _food_state(engine, FOOD_ITEMS)
             engine.complete_day()
+            _check_food_progress(engine, FOOD_ITEMS, day_probe,
+                                 SLEEP_HUNGER_NIGHT)
     except BaseException:
         import traceback
         traceback.print_exc()

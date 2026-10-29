@@ -579,6 +579,28 @@ try:
 finally:
     game_core.FOOD_ITEMS = _orig_foods
 
+# --- Pantry guard: food that can change nothing is never eaten -------------
+# Review finding: REST/SLEEP food gains are validator-legal ints, and
+# zeroes used to let the loop bite until the pantry hit empty. The guard
+# refuses any bite that cannot move health/energy/hunger toward
+# saturation; hunger-only gains still eat.
+guard = GameEngine(seed=9)
+guard.inventory["berries"] = 10
+guard.health = guard.MAX_VITAL
+guard.energy = guard.MAX_VITAL
+guard.hunger = 0
+assert guard._eat_until_recovered(15, 25, -10) == [], "saturated: no eating"
+assert guard.inventory["berries"] == 10
+guard.health = 50
+assert guard._eat_until_recovered(0, 0, -10) == [], "zero-gain bites refused"
+assert guard.inventory["berries"] == 10, "pantry drained with no progress"
+guard.hunger = 25
+assert guard._eat_until_recovered(0, 0, -10) == ["berries"] * 3, \
+    "hunger-only gain still eats, to saturation"
+assert guard.inventory["berries"] == 7 and guard.hunger == 0
+assert guard.health == 50, "zero health gain stays zero"
+print("Pantry guard OK (zero-gain food never eaten)")
+
 # --- Engine: slot ordering is enforced ------------------------------------
 e.begin_day()
 e.run_slot(0)

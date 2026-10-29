@@ -292,7 +292,10 @@ game with. Item ids double as save keys — keep them stable.
 **best-tier-first**, draining each tier before downgrading, until
 health, energy, and hunger are fully recovered (hunger 0) — only a bare
 larder leaves a character unrecovered, and an already-recovered
-character wastes nothing. Ties keep file order. The `tooltip` is
+character wastes nothing. Ties keep file order. The loop also stops at
+the first bite that cannot move health, energy, or hunger toward
+saturation, so validator-legal zero gains (`REST/SLEEP_FOOD_*` = 0)
+can never drain the pantry. The `tooltip` is
 separate, display-only copy shown in-game — write what the item is
 genuinely for.
 
@@ -565,6 +568,9 @@ goldens.
   and plays seeded days per variant in fresh child processes — catching
   the "validation passed but the engine can't use it" class that unit
   mutations can't. Guard variants pin known-bad classes as MUST-FAIL.
+  The play loop also carries the pantry-drain net: during Rest and the
+  sleep cycle, food may only be consumed while some target stat moves
+  toward saturation (health/energy up, hunger down).
   Spawned by test_smoke; standalone: `python check_fuzz.py [dir]`.
 - **`python check_design.py`** is the *advisory* content lint: prints
   warnings (unobtainable items, untrained skills, missing pattern
