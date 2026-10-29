@@ -66,7 +66,7 @@ BALANCE_TYPES: Dict[str, str] = {
     "CHECK_DIE": "int", "EVENT_DIFFICULTY": "int", "ACTION_DIFFICULTY": "int",
     "EVENT_XP_SUCCESS": "int", "EVENT_XP_FAILURE": "int",
     "EVENT_FAILURE_HEALTH": "int",
-    "EVENT_CHANCE": "number", "LEAN_TO_RECOVERY_BONUS": "number",
+    "EVENT_CHANCE": "number",
     "GATHER_ENERGY_COST": "int", "GATHER_HUNGER_COST": "int",
     "REST_FOOD_HEALTH": "int", "REST_FOOD_ENERGY": "int",
     "REST_FOOD_HUNGER_NET": "int",
@@ -150,12 +150,13 @@ EFFECT_TYPES: Dict[str, dict] = {
 
 #: (record kind -> effect type -> allowed triggers) pairs that HAVE a
 #: consuming applier (binding N1). Grows in the same commit as each
-#: applier: E2 enables patterns/recovery_bonus; E3 events' triggered
-#: ops; E4 items/yield_bonus. E1 ships it EMPTY — the registry and
-#: validation land first, nothing is appliable yet, so no entry can
-#: silently never-fire. test_smoke pins the empty state; each slice
-#: pins its own enabling alongside the applier.
-LEGAL_EFFECTS: Dict[str, Dict[str, Tuple[str, ...]]] = {}
+#: applier; a pair without one is the silent-never-fire bug this table
+#: exists to prevent. E1 shipped it EMPTY (test_smoke pinned it); E2
+#: enabled the pair below with game_core._recovery's applier; E3 adds
+#: events' triggered ops; E4 items/yield_bonus.
+LEGAL_EFFECTS: Dict[str, Dict[str, Tuple[str, ...]]] = {
+    "patterns": {"recovery_bonus": ("always",)},
+}
 
 
 def effect_text(entry: Any) -> str:

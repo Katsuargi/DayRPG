@@ -794,18 +794,13 @@ print("GUI smoke OK: 2e repair flow + run-check")
 # --- E1: effects render read-only (registry slice, no editable rows) --------
 # Generated text (D4) in both the stacked viewer and the record form;
 # no editable widget until E5; mounting never mutates the record; the
-# zero-pair legality problem stays visible and the bundle usable.
+# fixture's own effects validate clean now that E2 enabled the pair.
 tmp5 = Path(tempfile.mkdtemp(prefix="effects_"))
 try:
     for f in (_ROOT / "tests" / "fixtures" / "content").glob("*.json"):
         shutil.copy(f, tmp5 / f.name)
-    pats = json.loads((tmp5 / "patterns.json").read_text(encoding="utf-8"))
-    pats["lean_to"]["effects"] = [{"type": "recovery_bonus", "mult": 0.1}]
-    (tmp5 / "patterns.json").write_text(json.dumps(pats, indent=2),
-                                        encoding="utf-8")
     root5, viewer5 = build(tmp5)
-    assert any("not (yet) allowed on patterns records" in str(p)
-               for p in viewer5.problems), viewer5.problems
+    assert viewer5.problems == [], viewer5.problems  # E2 pair legal
 
     # stacked read-only view renders the generated text, not the raw dict
     idx_p = list(CONTENT_FILES).index("patterns")

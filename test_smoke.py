@@ -503,7 +503,9 @@ _item["effects"] = [{"type": "grant_xp", "when": "on_success",
 probs = _eff_probs("items", _item)
 assert any("must not carry 'key'" in p for p in probs), probs
 
-# THE E1 PIN: a fully well-formed entry is still rejected — zero pairs
+# THE N1 GATING PIN: items×yield_bonus is still disabled (E4's pair),
+# while E2's pair — the same kind of well-formed entry on a pattern —
+# validates clean NOW, in the same commit that wired the applier.
 _item["effects"] = [{"type": "yield_bonus", "action": "gather_wood",
                      "add": 1}]
 probs = _eff_probs("items", _item)
@@ -511,6 +513,11 @@ assert any("not (yet) allowed on items records" in p for p in probs), probs
 _pat = dict(_records_of("patterns", live_bundle)[0])
 assert _pat["name"] == "Lean to", _pat["name"]
 _pat["effects"] = [{"type": "recovery_bonus", "mult": 0.1}]
+probs = _eff_probs("patterns", _pat)
+assert probs == [], "E2 enabled patterns x recovery_bonus (N1)"
+# ...but only its declared trigger: an unappliable `when` still fails
+_pat["effects"] = [{"type": "recovery_bonus", "mult": 0.1,
+                    "when": "on_success"}]
 probs = _eff_probs("patterns", _pat)
 assert any("not (yet) allowed on patterns records" in p for p in probs), probs
 
@@ -1251,3 +1258,26 @@ assert _spawn.returncode == 0, (
     "check_design.py crashed:\n" + _spawn.stdout + _spawn.stderr
 )
 print(_spawn.stdout, end="")
+
+# --- E2: recovery_bonus SUMS over built buildings (D1), floors once ---------
+# The one-source pins (15->16, 25->27, the +32/+50 rest) live with the
+# lean-to build test above; this is the discriminating case — max-wins
+# would give 16, SUM gives 18 (binding D1 picked sum).
+e2 = GameEngine(seed=12)
+e2.EVENT_CHANCE = 0.0
+assert e2._recovery(15) == 15, "no buildings: raw amount"
+e2.buildings["lean_to"] = 1
+assert e2._recovery(15) == 16, "one 0.1 source: byte-identical x1.1"
+_axe = game_core.PATTERNS["wood_axe"]
+_axe_effects = _axe.effects
+try:
+    # frozen dataclass — object.__setattr__ is the test-only door; the
+    # shipped pattern is restored immediately (shared module table)
+    object.__setattr__(_axe, "effects",
+                       _axe.effects + ({"type": "recovery_bonus",
+                                        "mult": 0.1},))
+    e2.buildings["wood_axe"] = 1
+    assert e2._recovery(15) == 18, "two 0.1 sources SUM then floor once"
+finally:
+    object.__setattr__(_axe, "effects", _axe_effects)
+print("Effects applier OK (E2: recovery_bonus sums, floors once)")

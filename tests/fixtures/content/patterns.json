@@ -9,7 +9,12 @@
     },
     "work": 1,
     "description": "A large piece of wood leaning against a tree. Keeps the weather out, at least.",
-    "effect": "Resting and sleeping restore +10% health and energy (rounded down)."
+    "effects": [
+      {
+        "type": "recovery_bonus",
+        "mult": 0.1
+      }
+    ]
   },
   "wood_axe": {
     "name": "Wood Axe",

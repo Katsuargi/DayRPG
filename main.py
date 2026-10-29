@@ -13,7 +13,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from content import ContentError
+from content import ContentError, effect_text
 
 try:
     from game_core import (
@@ -413,10 +413,20 @@ class DaySchedulerApp:
             Tooltip(self.root, (name_label, level_label, xp_label), tooltip)
         return row + 1
 
+    @staticmethod
+    def _pattern_effect(pattern) -> str:
+        """D4: generated text when the record carries effects; the
+        legacy hand string stays the fallback for records without
+        (E4 retires the axe's string when it migrates)."""
+        if pattern.effects:
+            return "; ".join(effect_text(e) for e in pattern.effects)
+        return pattern.effect
+
     def _pattern_tooltip(self, pattern) -> str:
         text = f"{pattern.name} — {pattern.description}"
-        if pattern.effect:
-            text += f"\nEffect: {pattern.effect}"
+        effect = self._pattern_effect(pattern)
+        if effect:
+            text += f"\nEffect: {effect}"
         return text
 
     def _rebuild_buildings(self) -> None:
@@ -677,8 +687,9 @@ class DaySchedulerApp:
                 font=(FAMILY, 11, "bold"), anchor="w",
             ).pack(fill="x")
             blurb = pattern.description
-            if pattern.effect:
-                blurb += f"\nEffect: {pattern.effect}"
+            effect = self._pattern_effect(pattern)
+            if effect:
+                blurb += f"\nEffect: {effect}"
             tk.Label(
                 box, text=blurb, bg=DIALOG_BG, fg=MUTED_FG,
                 font=(FAMILY, 9, "italic"), anchor="w",

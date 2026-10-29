@@ -121,7 +121,6 @@ are edited in the JSON:
 | `CHECK_DIE` | 20 | Die size for all checks. |
 | `EVENT_XP_SUCCESS` / `EVENT_XP_FAILURE` | 12 / 6 | XP per event contributor. |
 | `EVENT_FAILURE_HEALTH` | -5 | Health lost on a failed event check. |
-| `LEAN_TO_RECOVERY_BONUS` | 0.10 | Lean to: +10% recovery, rounded down. |
 
 Every number from `content/balance.json` shows up as a same-named module
 constant (`MAX_VITAL = CONTENT.balance["MAX_VITAL"]`), so grep still
@@ -167,9 +166,12 @@ class/module values in tests; override per instance.
   flat amount]`), a blueprint's `work`/`skill_req`/`materials`,
   per-record `difficulty`. Adding content stays zero-Python, and the
   editor can create it without touching code.
-- Building effects whose math is still hardcoded (`_recovery`'s
-  lean-to branch) unify into records when the effects registry lands
-  (roadmap-deferred).
+- **Effects live on their record** — the lean-to's `recovery_bonus`
+  (E2: `_recovery` sums mults over built buildings, floors once) is the
+  first entry of the `EFFECT_TYPES` registry in `content.py`. New
+  effect types take three touches: a registry entry, a `LEGAL_EFFECTS`
+  pair enabled in the same commit as their applier, and the applier
+  itself — validation rejects everything else.
 - **Wholesale review:** the viewer's **Tunables** tab aggregates every
   balance-relevant number from all files onto one screen.
 

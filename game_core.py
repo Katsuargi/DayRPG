@@ -160,6 +160,7 @@ class Pattern:
     work: int  # successful attempts needed to finish
     description: str
     effect: str = ""  # mechanic explanation, shown in tooltips
+    effects: Tuple[dict, ...] = ()  # E1 registry entries; appliers read them
     difficulty: int | None = None  # DC override; None = ACTION_DIFFICULTY
 
 
@@ -176,6 +177,7 @@ PATTERNS: Dict[str, Pattern] = {
         work=record["work"],
         description=record["description"],
         effect=record.get("effect", ""),
+        effects=tuple(record.get("effects", ())),
         difficulty=record.get("difficulty"),
     )
     for key, record in CONTENT.patterns.items()
@@ -236,8 +238,6 @@ EVENT_FAILURE_HEALTH = CONTENT.balance["EVENT_FAILURE_HEALTH"]
 #: Chance a random event interrupts a slot (mirrored on GameEngine so
 #: tests can override per instance, like ACTION_DIFFICULTY).
 EVENT_CHANCE = CONTENT.balance["EVENT_CHANCE"]
-#: Lean to passive effect: +10% health/energy recovery, rounded down.
-LEAN_TO_RECOVERY_BONUS = CONTENT.balance["LEAN_TO_RECOVERY_BONUS"]
 
 # --- Balance: costs, yields, recovery (content/balance.json) ---------------
 
@@ -988,9 +988,25 @@ class GameEngine:
         return die + stat.level >= dc
 
     def _recovery(self, amount: int) -> int:
-        """Scale a recovery gain; the Lean to adds 10%, rounded down."""
-        if amount > 0 and self.buildings.get("lean_to"):
-            return int(amount * (1 + LEAN_TO_RECOVERY_BONUS))
+        """Scale a recovery gain by built buildings' `recovery_bonus`
+        effects (E2, binding D1): SUM the mults across active sources,
+        then floor once — int(amount * (1 + total_mult)). With one 0.1
+        source this is byte-identical to the retired
+        LEAN_TO_RECOVERY_BONUS path (+32/+50 pin), and the amount > 0
+        guard keeps the eat loop's zero/negative gains untouched."""
+        if amount > 0:
+            total = 0.0
+            for building_id, count in self.buildings.items():
+                if not count:
+                    continue
+                pattern = PATTERNS.get(building_id)
+                if pattern is None:
+                    continue
+                for eff in pattern.effects:
+                    if eff["type"] == "recovery_bonus":
+                        total += eff["mult"]
+            if total:
+                return int(amount * (1 + total))
         return amount
 
     def _apply_gather_item(self, action_id: str) -> Tuple[bool, str]:
