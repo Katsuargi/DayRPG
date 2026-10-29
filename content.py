@@ -152,10 +152,15 @@ EFFECT_TYPES: Dict[str, dict] = {
 #: consuming applier (binding N1). Grows in the same commit as each
 #: applier; a pair without one is the silent-never-fire bug this table
 #: exists to prevent. E1 shipped it EMPTY (test_smoke pinned it); E2
-#: enabled the pair below with game_core._recovery's applier; E3 adds
-#: events' triggered ops; E4 items/yield_bonus.
+#: enabled patterns/recovery_bonus with game_core._recovery; E3 added
+#: the events block with _resolve_event's applier; E4 adds
+#: items/yield_bonus. on_use stays reserved everywhere (plan R18).
 LEGAL_EFFECTS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     "patterns": {"recovery_bonus": ("always",)},
+    "events": {"vital_delta": ("on_success", "on_failure"),
+               "grant_xp": ("on_success", "on_failure"),
+               "grant_item": ("on_success", "on_failure"),
+               "consume_item": ("on_success", "on_failure")},
 }
 
 
@@ -931,9 +936,22 @@ def _check_effects(fname: str, records: Any, item_ids: Set[str],
     else:
         return  # file shape reported by the file's own checker
     for rec_id, rec in entries:
-        if not isinstance(rec, dict) or "effects" not in rec:
+        if not isinstance(rec, dict):
             continue
         where = f"{fname}.json: {rec_id!r}"
+        if fname == "events" and rec.get("check") is True:
+            # binding N2 (lands with the E3 applier): a named check
+            # event must declare its failure consequence — the generic
+            # EVENT_FAILURE_HEALTH penalty only covers chosen-is-None
+            effs = rec.get("effects")
+            if not (isinstance(effs, list) and any(
+                    isinstance(e, dict) and e.get("when") == "on_failure"
+                    for e in effs)):
+                problems.append(
+                    f"{where}: check:true events must declare at least "
+                    "one 'on_failure' effect")
+        if "effects" not in rec:
+            continue
         effects = rec["effects"]
         if not isinstance(effects, list):
             problems.append(f"{where}: 'effects' must be a list")

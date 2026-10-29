@@ -120,7 +120,7 @@ are edited in the JSON:
 | `EVENT_DIFFICULTY` | 10 | DC for event checks. |
 | `CHECK_DIE` | 20 | Die size for all checks. |
 | `EVENT_XP_SUCCESS` / `EVENT_XP_FAILURE` | 12 / 6 | XP per event contributor. |
-| `EVENT_FAILURE_HEALTH` | -5 | Health lost on a failed event check. |
+| `EVENT_FAILURE_HEALTH` | -5 | Generic-path penalty when no event is drawn — named check-events declare their own `on_failure` effects (E3) instead, never both. |
 
 Every number from `content/balance.json` shows up as a same-named module
 constant (`MAX_VITAL = CONTENT.balance["MAX_VITAL"]`), so grep still

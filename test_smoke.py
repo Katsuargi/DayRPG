@@ -868,6 +868,10 @@ ev.EVENT_CHANCE = 1.0
 ev.RANDOM_EVENTS = {
     "generic": RandomEvent(
         id="generic", text="A test of mettle.", actions=(), check=True,
+        # E3: named check-events declare their consequence (N2) — the
+        # validator demands this of content; test-built ones must too
+        effects=({"type": "vital_delta", "when": "on_failure",
+                  "target": "health", "amount": -5},),
     ),
 }
 expected_bonus = ev.skills["foraging"].level + ev.stats["strength"].level
@@ -1032,6 +1036,8 @@ named.abort_day()
 named.RANDOM_EVENTS = {
     "generic": RandomEvent(
         id="generic", text="A test of mettle.", actions=(), check=True,
+        effects=({"type": "vital_delta", "when": "on_failure",
+                  "target": "health", "amount": -5},),
     ),
 }
 named.begin_day()
@@ -1047,6 +1053,8 @@ named.RANDOM_EVENTS = {
     "hard": RandomEvent(
         id="hard", text="A daunting trial.", actions=(), check=True,
         difficulty=50,
+        effects=({"type": "vital_delta", "when": "on_failure",
+                  "target": "health", "amount": -5},),
     ),
 }
 named.begin_day()
@@ -1281,3 +1289,104 @@ try:
 finally:
     object.__setattr__(_axe, "effects", _axe_effects)
 print("Effects applier OK (E2: recovery_bonus sums, floors once)")
+
+# --- E3: N2 validation — check:true events must declare on_failure ----------
+# Lands with the applier: the generic penalty only covers chosen-is-None,
+# so a named check-event without a declared failure side is a load error.
+def _eff_probs(fname: str, rec: dict) -> list:
+    """Problems from live content with rec as fname's first record."""
+    return [str(p) for p in content.validate_bundle(
+        content.Content(source=live_bundle.source,
+                        **_mutated(fname, rec)))]
+
+_evt_nat = dict(_records_of("events", live_bundle)[1])
+assert _evt_nat["check"] is True, _evt_nat["text"]
+_evt_nat["effects"] = []
+probs = _eff_probs("events", _evt_nat)
+assert any("must declare at least one 'on_failure' effect" in p
+           for p in probs), probs
+_evt_nat["effects"] = [{"type": "grant_xp", "when": "on_success",
+                        "kind": "player", "amount": 3}]
+probs = _eff_probs("events", _evt_nat)
+assert any("must declare at least one 'on_failure' effect" in p
+           for p in probs), probs
+del _evt_nat["effects"]
+probs = _eff_probs("events", _evt_nat)
+assert any("must declare at least one 'on_failure' effect" in p
+           for p in probs), probs
+assert content.validate_bundle(live_bundle) == [], "live content clean"
+print("Effects N2 rule OK (check:true events declare on_failure)")
+
+# --- E3: event effects — both reporting channels, no double-dip (N2/N4) ------
+# Failure side: declared effects run INSTEAD of the generic penalty
+# (health 100-5 = 95, never 90), reach the popup channel AND the
+# summary channel (diff-captured vitals/items + explicit XP).
+e3 = GameEngine(seed=14)
+e3.EVENT_CHANCE = 1.0
+e3.RANDOM_EVENTS = {"probe": RandomEvent(
+    id="probe", text="A trial by hazard.", actions=(), check=True,
+    difficulty=999,  # d20 + level can never reach it: always fails
+    effects=({"type": "vital_delta", "when": "on_failure",
+              "target": "health", "amount": -5},
+             {"type": "grant_item", "when": "on_failure",
+              "item": "wood", "count": 2},
+             {"type": "grant_xp", "when": "on_failure",
+              "kind": "player", "amount": 6}))}
+e3.set_slot_action(0, GATHER_FOOD)
+e3.begin_day()
+res = e3.run_slot(0)
+assert res.event is not None and not res.event.success, res.event
+assert ("Health", -5) in res.event.changes, res.event.changes
+assert ("Wood", 2) in res.event.changes, res.event.changes
+assert ("XP", 6) in res.event.changes, res.event.changes
+assert ("Health", -5) in res.changes, res.changes   # _diff channel
+assert ("Wood", 2) in res.changes, res.changes      # _diff channel
+assert ("XP", 6) in res.changes, res.changes        # xp_changes channel
+assert e3.health == 95, ("effects ran INSTEAD of the generic penalty "
+                         f"(double-dip would give 90): {e3.health}")
+
+# Success side: only the matching trigger runs — the declared
+# on_failure effect must stay dormant on a success.
+e3s = GameEngine(seed=15)
+e3s.EVENT_CHANCE = 1.0
+e3s.RANDOM_EVENTS = {"gift": RandomEvent(
+    id="gift", text="A lucky find.", actions=(), check=True,
+    difficulty=0,  # always succeeds
+    effects=({"type": "grant_xp", "when": "on_success",
+              "kind": "stats", "key": "strength", "amount": 4},
+             {"type": "vital_delta", "when": "on_success",
+              "target": "energy", "amount": -3},
+             {"type": "grant_item", "when": "on_failure",
+              "item": "wood", "count": 9}))}
+e3s.set_slot_action(0, GATHER_FOOD)
+_wood0 = e3s.inventory["wood"]
+e3s.begin_day()
+res = e3s.run_slot(0)
+assert res.event is not None and res.event.success, res.event
+assert ("Energy", -3) in res.event.changes, res.event.changes
+assert any(lbl == "Strength XP" and d == 4
+           for lbl, d in res.event.changes), res.event.changes
+assert not any(lbl == "Wood" for lbl, _d in res.event.changes), \
+    "the wrong-side effect never runs"
+assert e3s.inventory["wood"] == _wood0 and \
+    ("Wood", 9) not in res.changes, "dormant on_failure stays dormant"
+
+# Generic path (N2): no event drawn → the engine penalty applies
+# exactly once and no effects exist to run.
+e3g = GameEngine(seed=16)
+e3g.EVENT_CHANCE = 1.0
+e3g.RANDOM_EVENTS = {}  # nothing eligible → chosen is None
+_ed_saved = game_core.EVENT_DIFFICULTY
+try:
+    game_core.EVENT_DIFFICULTY = 999  # the generic check always fails
+    e3g.set_slot_action(0, GATHER_FOOD)
+    e3g.begin_day()
+    res = e3g.run_slot(0)
+finally:
+    game_core.EVENT_DIFFICULTY = _ed_saved
+assert res.event is not None and res.event.event_id == "", res.event
+assert not res.event.success, res.event
+assert ("Health", -5) in res.event.changes, res.event.changes
+assert e3g.health == 95, ("generic penalty applies exactly once when "
+                          f"no event was drawn: {e3g.health}")
+print("Effects applier OK (E3: declared sides, both channels, no double-dip)")

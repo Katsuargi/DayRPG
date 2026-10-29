@@ -2,14 +2,30 @@
   "wandering_thoughts": {
     "text": "Your mind drifts to the world you left behind.",
     "actions": [],
-    "check": true
+    "check": true,
+    "effects": [
+      {
+        "type": "vital_delta",
+        "when": "on_failure",
+        "target": "health",
+        "amount": -5
+      }
+    ]
   },
   "stray_berry_bush": {
     "text": "A stray berry bush practically begs to be picked.",
     "actions": [
       "gather_food"
     ],
-    "check": true
+    "check": true,
+    "effects": [
+      {
+        "type": "vital_delta",
+        "when": "on_failure",
+        "target": "health",
+        "amount": -5
+      }
+    ]
   },
   "howling_wind": {
     "text": "A hard gust nearly tears the work from your hands.",
@@ -18,7 +34,15 @@
       "build",
       "craft"
     ],
-    "check": true
+    "check": true,
+    "effects": [
+      {
+        "type": "vital_delta",
+        "when": "on_failure",
+        "target": "health",
+        "amount": -5
+      }
+    ]
   },
   "quiet_moment": {
     "text": "For a breath everything is still. No check, no consequences.",

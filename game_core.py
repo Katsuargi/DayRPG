@@ -200,13 +200,15 @@ class RandomEvent:
     actions: Tuple[str, ...] = ()
     check: bool = True
     difficulty: int | None = None  # DC override; None = EVENT_DIFFICULTY
+    effects: Tuple[dict, ...] = ()  # E3 typed entries; _resolve_event applies
 
 
 #: When an event fires for an action, the engine filters this table by
 #: matching `actions` and picks one at random — table order feeds the
 #: seeded RNG, so keep content/events.json key order stable. Ids are
-#: stable names; per-event effects don't exist yet; `_resolve_event` is
-#: the hook point when you add them.
+#: stable names; typed per-event effects (E3) dispatch in
+#: `_resolve_event`, which runs a drawn event's declared sides instead
+#: of the generic penalty.
 RANDOM_EVENTS: Dict[str, RandomEvent] = {
     key: RandomEvent(
         id=key,
@@ -214,6 +216,7 @@ RANDOM_EVENTS: Dict[str, RandomEvent] = {
         actions=tuple(record["actions"]),
         check=record["check"],
         difficulty=record.get("difficulty"),
+        effects=tuple(record.get("effects", ())),
     )
     for key, record in CONTENT.events.items()
 }
@@ -884,8 +887,9 @@ class GameEngine:
         A named event is drawn from RANDOM_EVENTS (filtered by which
         actions may trigger it); `check=False` events are pure flavor.
         Otherwise the generic check runs: contributors' levels feed the
-        roll, and the outcome feeds XP back (plus health on failure).
-        Per-event effects can be added here without touching any UI code.
+        roll, and the outcome feeds XP back. A drawn event applies its
+        declared `effects` (E3) instead of the generic health penalty;
+        with no event drawn the generic penalty still applies.
         """
         chosen = self._pick_event(action_id)
         text = chosen.text if chosen else ""
@@ -927,7 +931,20 @@ class GameEngine:
             event_changes.extend(changes)
             if level_note:
                 notes.append(level_note)
-        if not success:
+        if chosen is not None:
+            # E3 (binding N2): a drawn event runs its own declared
+            # sides INSTEAD of — never in addition to — the generic
+            # penalty; validation guarantees `when` is present (D8/R16)
+            # and legal for events (LEGAL_EFFECTS).
+            want = "on_success" if success else "on_failure"
+            for eff in chosen.effects:
+                if eff.get("when") == want:
+                    self._apply_effect(eff, event_changes, xp_changes,
+                                       notes)
+        elif not success:
+            # binding N2: no event was drawn — the generic engine
+            # penalty stays (sparse-event content; live content hides
+            # this path behind wandering_thoughts' actions: [])
             self.health = clamp(self.health + EVENT_FAILURE_HEALTH)
             event_changes.append(("Health", EVENT_FAILURE_HEALTH))
 
@@ -943,6 +960,44 @@ class GameEngine:
             check=check, bonus=bonus, die=die, roll=roll, success=success,
             event_id=event_id, text=text, changes=event_changes, note=note,
         )
+
+    def _apply_effect(self, effect: Dict[str, object],
+                      event_changes: List[Change],
+                      xp_changes: List[Change],
+                      notes: List[str]) -> None:
+        """E3: run one triggered effect entry (bindings N2/D2/N4).
+
+        Deterministic — no rng draws (D2). Reporting feeds BOTH
+        channels (N4): vitals/items mutate state (the slot's `_diff`
+        captures them for the summary) and append to `event_changes`
+        (the event popup); XP goes through `add_xp` and extends
+        `xp_changes` explicitly (XP is never diffed). The dispatch is
+        closed — LEGAL_EFFECTS allows only these four types on events,
+        and `_check_effects` rejects the rest (N1)."""
+        etype = effect["type"]
+        if etype == "vital_delta":
+            target = effect["target"]
+            amount = effect["amount"]
+            setattr(self, target, clamp(getattr(self, target) + amount))
+            event_changes.append((dict(STAT_LABELS)[target], amount))
+        elif etype == "grant_xp":
+            changes, level_note = self.add_xp(
+                effect["kind"], effect.get("key"), effect["amount"])
+            xp_changes.extend(changes)
+            event_changes.extend(changes)
+            if level_note:
+                notes.append(level_note)
+        else:  # grant_item or consume_item (validated refs)
+            item = effect["item"]
+            count = effect["count"]
+            before = self.inventory.get(item, 0)
+            if etype == "grant_item":
+                self.inventory[item] = before + count
+            else:
+                self.inventory[item] = max(0, before - count)
+            delta = self.inventory[item] - before
+            if delta:
+                event_changes.append((ITEM_NAMES.get(item, item), delta))
 
     # --- Action handlers -------------------------------------------------
 
